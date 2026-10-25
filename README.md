@@ -6,7 +6,7 @@ captured once and fanned out to:
 1. **Web radio** (audio only, RTMP) to the local Tuberadio and/or to web-radio-relay on the VPS.
 2. **Live transcription** through liturgos-auditor (`POST /inference`), in bounded chunks.
 3. **Captions** to web-radio-relay (`POST /api/v1/captions`, timed, Bearer token) and, later, YouTube
-   (through the `lcyt` core; YouTube work is deferred).
+   (through the `lcyt` core; auto mode checks the stream online).
 
 There is no UI. PiMatrix and picontrol talk to the OpenAPI control API. Node 24, ESM, no build step.
 
