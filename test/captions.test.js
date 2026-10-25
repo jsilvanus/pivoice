@@ -76,3 +76,31 @@ test('YouTube captions keep order, add the delay and hide the stream key in erro
 test('YouTube start without a key is an error', () => {
   assert.throws(() => new YouTubeCaptions({}).start(), /stream key is not set/);
 });
+
+test('a batch the relay refuses (400) is dropped so later captions still go out', async () => {
+  const bodies = [];
+  const fetchFn = async (url, init) => {
+    bodies.push(JSON.parse(init.body));
+    return bodies.length === 1 ? jsonResponse({ error: 'bad' }, 400) : jsonResponse({}, 202);
+  };
+  const relay = new RelayCaptions({ url: 'https://r', token: 't', fetchFn, now: () => 1000, batchSize: 10, flushMs: 60_000 });
+  relay.start();
+  relay.push(ev(1, 500));
+  await relay.flush();
+  relay.push(ev(2, 600));
+  await relay.flush();
+  assert.equal(relay.status().dropped, 1);
+  assert.equal(relay.status().sent, 1);
+  assert.equal(bodies[1].segments[0].text, 't2');
+  relay.stop();
+});
+
+test('an auth failure keeps the batch for retry', async () => {
+  const fetchFn = async () => jsonResponse({}, 401);
+  const relay = new RelayCaptions({ url: 'https://r', token: 't', fetchFn, now: () => 1000, flushMs: 60_000 });
+  relay.start();
+  relay.push(ev(1, 500));
+  await relay.flush();
+  assert.equal(relay.status().queued, 1);
+  relay.stop();
+});

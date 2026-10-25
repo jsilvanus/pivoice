@@ -93,6 +93,13 @@ export class RelayCaptions {
         } catch (err) {
           this.#stats.failed++;
           this.#stats.lastError = err.message;
+          // A 4xx other than auth or rate limit means the batch itself is refused (the relay rejects a whole
+          // request on one bad segment). Drop it so later captions are not held behind it.
+          if (err.permanent) {
+            this.#buffer.splice(0, batch.length);
+            this.#stats.dropped += batch.length;
+            continue;
+          }
           break;
         }
       }
@@ -120,6 +127,10 @@ export class RelayCaptions {
       }),
       signal: AbortSignal.timeout(10_000),
     });
-    if (!res.ok) throw new Error(`caption relay answered HTTP ${res.status}`);
+    if (!res.ok) {
+      const err = new Error(`caption relay answered HTTP ${res.status}`);
+      err.permanent = res.status >= 400 && res.status < 500 && ![401, 403, 429].includes(res.status);
+      throw err;
+    }
   }
 }
