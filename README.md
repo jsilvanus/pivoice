@@ -6,7 +6,7 @@ captured once and fanned out to:
 1. **Web radio** (audio only, RTMP) to the local Tuberadio and/or to web-radio-relay on the VPS.
 2. **Live transcription** through liturgos-auditor (`POST /inference`), in bounded chunks.
 3. **Captions** to web-radio-relay (`POST /api/v1/captions`, timed, Bearer token) and, later, YouTube
-   (through the `lcyt` core; YouTube work is deferred).
+   (through the `lcyt` core; auto mode checks the stream online).
 
 There is no UI. PiMatrix and picontrol talk to the OpenAPI control API. Node 24, ESM, no build step.
 
@@ -19,7 +19,7 @@ Every consumer has a mode: **`on`**, **`off`** or **`auto`**.
 | Web radio to a target | `radio.targets[].mode` | encoder runs only while speech is detected (VAD); pre-roll is sent so speech is not cut |
 | Transcription | `auditor.mode` | only chunks with speech are sent to the auditor |
 | Captions to web-radio-relay | `captions.relay.mode` | only captions of speech are sent |
-| Captions to YouTube | `captions.youtube.mode` | a stream is online. **Deferred:** `auto` behaves as `off` until the stream-online check is built (`streamOnline` hook in `PiVoiceService`) |
+| Captions to YouTube | `captions.youtube.mode` | the stream is online: PiVoice polls the YouTube Data API (`videos.list`, `liveBroadcastContent`) every 30 s for `captions.youtube.videoId`, using `captions.youtube.apiKey` (sent in a header). It goes offline after two consecutive non-live polls. A failed poll keeps the last state |
 
 Voice detection is an energy gate (`voice.thresholdDb`, `voice.hangoverSeconds`, `voice.prerollSeconds`).
 
@@ -34,6 +34,7 @@ YouTube captions use `captions.youtube.delayMs` on the sender side (for when You
 
 - Capture is shared; a radio encoder, the auditor or the relay failing never restarts capture.
 - Each ffmpeg (capture, each radio target) restarts with exponential backoff.
+- YouTube auto: a failed stream check keeps the last known state, so captions are not cut by an API outage.
 - Transcription queue is bounded: the oldest waiting chunk is dropped; chunks older than 30 s are skipped.
 - The relay buffers while it is unreachable, for at most 60 s; older events are dropped, not replayed.
 
@@ -58,7 +59,7 @@ Example (`PUT /api/v1/config`):
   "auditor": { "url": "http://auditor.lan:8090", "apiKey": "…", "mode": "on", "language": "fi" },
   "captions": {
     "relay": { "mode": "on", "url": "https://relay.example", "token": "RELAY_API_TOKEN" },
-    "youtube": { "mode": "off", "streamKey": null, "delayMs": 0 }
+    "youtube": { "mode": "auto", "streamKey": "…", "apiKey": "…", "videoId": "abcdefghijk", "delayMs": 0 }
   }
 }
 ```
@@ -125,7 +126,7 @@ auditor, relay and YouTube each take injected `spawn`/`fetch`/sender. The YouTub
 ## Not verified
 
 - Hama capture on a real Pi (ALSA format, gain, clipping): untested.
-- Real auditor, real web-radio-relay and real YouTube ingest: untested.
+- Real auditor, real web-radio-relay, real YouTube ingest and the stream-online check against live YouTube: untested.
 - RTMP into web-radio-relay: untested.
 - Auto modes (VAD thresholds) on real room audio: needs tuning on site.
 - Translation: deferred; the caption `lang` field is kept so it can be added.

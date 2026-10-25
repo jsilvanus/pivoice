@@ -438,7 +438,7 @@ components:
                   description: "Secret: the relay RELAY_API_TOKEN"
             youtube:
               type: object
-              description: "YouTube caption delivery. Deferred: auto (stream online) behaves as off for now."
+              description: YouTube caption delivery. auto = send while the stream is online, checked by polling the YouTube Data API with apiKey and videoId.
               properties:
                 mode: *a1
                 streamKey:
@@ -448,6 +448,16 @@ components:
                   description: Secret
                 delayMs:
                   type: integer
+                apiKey:
+                  type:
+                    - string
+                    - "null"
+                  description: "Secret: YouTube Data API key (used only for the stream-online check)"
+                videoId:
+                  type:
+                    - string
+                    - "null"
+                  description: Video or live broadcast ID to watch for auto mode (11 characters)
         voice:
           type: object
           properties:
@@ -593,3 +603,23 @@ components:
               enum:
                 - on
                 - off
+              description: Whether captions are being sent to YouTube now
+            stream:
+              type: object
+              description: Stream-online check used by auto mode
+              properties:
+                configured:
+                  type: boolean
+                watching:
+                  type: boolean
+                online:
+                  type: boolean
+                lastCheckedAt:
+                  type:
+                    - string
+                    - "null"
+                  format: date-time
+                lastError:
+                  type:
+                    - string
+                    - "null"

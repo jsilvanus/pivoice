@@ -95,3 +95,29 @@ test('transcription mode off sends nothing to the auditor', async () => {
   assert.equal(called, 0);
   assert.equal(service.status().transcription.mode, 'off');
 });
+
+test('youtube auto sends captions only while the stream is online', async () => {
+  const { store } = await tempStore({
+    captions: { youtube: { mode: 'auto', streamKey: 'yt-key', apiKey: 'AIzaKEY', videoId: 'abcdefghijk', delayMs: 1000 } },
+  });
+  let online = false;
+  const sent = [];
+  const fetchFn = async () => jsonResponse({ items: [{ snippet: { liveBroadcastContent: online ? 'live' : 'none' } }] });
+  const createSender = () => ({ start() {}, end() {}, async send(text, ts) { sent.push([text, ts]); } });
+  const service = new PiVoiceService({ store, spawn: fakeSpawn(), fetchFn, createSender, now: () => NOW });
+  await waitFor(() => service.captionsStatus().youtube.stream.lastCheckedAt !== null);
+  assert.equal(service.captionsStatus().youtube.effective, 'off');
+
+  online = true;
+  await service.streamWatcher.poll();
+  assert.equal(service.captionsStatus().youtube.effective, 'on');
+  service.transcriber.emit('transcript', { seq: 1, startMs: 5000, endMs: 6000, text: 'Siunatkoon', language: 'fi' });
+  await waitFor(() => service.captionsStatus().youtube.sent === 1);
+  assert.deepEqual(sent, [['Siunatkoon', 6000]]);
+
+  online = false;
+  await service.streamWatcher.poll();
+  await service.streamWatcher.poll();
+  assert.equal(service.captionsStatus().youtube.effective, 'off');
+  service.stop();
+});
