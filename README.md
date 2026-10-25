@@ -114,7 +114,7 @@ Captions are published to `POST {relay}/api/v1/captions` with `Authorization: Be
 
 Up to 100 segments per request. Times are epoch milliseconds on the Pi clock. Audio goes over RTMP
 to `rtmp://<relay>:1935/live/<stream-key>`. Checked against the Tuberadio relay's `server/openapi.json`
-(the relay repo is web-radio-relay, same API); not yet tested against a deployed relay.
+(checked against web-radio-relay `server/openapi.json` at af76462); not yet tested against a deployed relay. A batch the relay refuses with a 4xx (other than 401, 403, 429) is dropped so later captions still go out.
 
 ## Tests
 
