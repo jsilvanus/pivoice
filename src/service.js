@@ -2,6 +2,7 @@ import { EventEmitter } from 'node:events';
 import { AuditorClient } from './auditor.js';
 import { CaptureSupervisor, listAudioDevices } from './capture.js';
 import { RelayCaptions } from './captions/relay.js';
+import { StreamOnlineWatcher } from './captions/stream-status.js';
 import { YouTubeCaptions } from './captions/youtube.js';
 import { Chunker } from './pcm.js';
 import { RadioOutputs } from './radio.js';
@@ -31,13 +32,13 @@ export class PiVoiceService {
   #fetchFn;
   #createSender;
   #execFile;
-  #streamOnline;
+  #stream = null;
   #relay = null;
   #youtube = null;
 
   constructor({
     store, spawn, fetchFn = globalThis.fetch, createSender, execFile, now = Date.now,
-    minRestartMs, maxRestartMs, staleMs, streamOnline = () => false,
+    minRestartMs, maxRestartMs, staleMs,
   }) {
     this.#store = store;
     this.#now = now;
@@ -45,7 +46,6 @@ export class PiVoiceService {
     this.#fetchFn = fetchFn;
     this.#createSender = createSender;
     this.#execFile = execFile;
-    this.#streamOnline = streamOnline;
     this.#hub.setMaxListeners(0);
 
     const cfg = store.get();
@@ -91,9 +91,15 @@ export class PiVoiceService {
       youtube: {
         mode: cfg.captions.youtube.mode,
         effective: this.#youtubeWanted() ? 'on' : 'off',
+        stream: this.#stream.status(),
         ...this.#youtube.status(),
       },
     };
+  }
+
+  /** The YouTube stream-online watcher (auto mode). Exposed for tests and for an operator poll. */
+  get streamWatcher() {
+    return this.#stream;
   }
 
   listDevices() {
@@ -131,6 +137,7 @@ export class PiVoiceService {
   }
 
   stop() {
+    this.#stream.stop();
     this.#relay.stop();
     this.#youtube.stop();
     this.stopCapture();
@@ -156,8 +163,22 @@ export class PiVoiceService {
   }
 
   #buildCaptions(cfg) {
+    if (this.#stream) {
+      this.#stream.removeAllListeners();
+      this.#stream.stop();
+    }
     this.#relay?.stop();
     this.#youtube?.stop();
+    this.#stream = new StreamOnlineWatcher({
+      apiKey: cfg.captions.youtube.apiKey,
+      videoId: cfg.captions.youtube.videoId,
+      fetchFn: this.#fetchFn,
+      now: this.#now,
+    });
+    this.#stream.on('change', () => {
+      this.#publish('captions', this.captionsStatus());
+      this.#syncCaptions();
+    });
     this.#relay = new RelayCaptions({
       url: cfg.captions.relay.url,
       token: cfg.captions.relay.token,
@@ -177,6 +198,8 @@ export class PiVoiceService {
     const cfg = this.#store.get();
     if (cfg.captions.relay.mode !== 'off' && this.#relay.configured) this.#relay.start();
     else this.#relay.stop();
+    if (cfg.captions.youtube.mode === 'auto' && this.#stream.configured) this.#stream.start();
+    else this.#stream.stop();
     try {
       if (this.#youtubeWanted()) this.#youtube.start();
       else this.#youtube.stop();
@@ -185,10 +208,10 @@ export class PiVoiceService {
     }
   }
 
-  // YouTube "auto" means a stream is online. That detection is deferred, so the hook is injected.
+  // YouTube "auto" means the stream is online, as reported by the stream watcher (polling the YouTube Data API).
   #youtubeWanted() {
     const mode = this.#store.get().captions.youtube.mode;
-    return mode === 'on' || (mode === 'auto' && this.#streamOnline());
+    return mode === 'on' || (mode === 'auto' && this.#stream.online);
   }
 
   #onPcm(pcm, startMs) {

@@ -73,9 +73,12 @@ export const configSchema = z.object({
         .prefault({}),
       youtube: z
         .object({
-          /** YouTube sending is deferred: auto (stream online) behaves as off for now. */
+          /** auto = send while the stream is online (see apiKey and videoId). */
           mode: MODE.default('off'),
           streamKey: secretText.nullable().default(null),
+          /** YouTube Data API key and the video (or live broadcast) ID, used by mode "auto" to see if the stream is online. */
+          apiKey: secretText.nullable().default(null),
+          videoId: z.string().regex(/^[A-Za-z0-9_-]{11}$/).nullable().default(null),
           /** Added to every caption timestamp so captions line up with the YouTube video delay. */
           delayMs: z.number().int().min(0).max(120000).default(0),
         })
@@ -89,6 +92,7 @@ const SECRET_FIELDS = [
   ['auditor', 'apiKey'],
   ['captions', 'relay', 'token'],
   ['captions', 'youtube', 'streamKey'],
+  ['captions', 'youtube', 'apiKey'],
 ];
 
 const isPlainObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
