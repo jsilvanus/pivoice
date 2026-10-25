@@ -1,0 +1,595 @@
+openapi: 3.1.0
+info:
+  title: PiVoice API
+  version: 1.0.0
+  description: 'Hama microphone capture (voice activity detection included) on the Pi, audio for web radio, transcription through liturgos-auditor, and caption delivery to the public relay and YouTube. The control API is for the Pi LAN only. Secrets are write-only: they are accepted by PUT /api/v1/config and returned as "***". Web radio and captions are delivered to web-radio-relay (jsilvanus/web-radio-relay).'
+servers:
+  - url: http://127.0.0.1:8095
+    description: Default address of a local PiVoice (PIVOICE_HOST / PIVOICE_PORT)
+security:
+  - bearerAuth: []
+tags:
+  - name: system
+  - name: capture
+  - name: radio
+  - name: transcription
+  - name: captions
+paths:
+  /health:
+    get:
+      operationId: getHealth
+      tags:
+        - system
+      summary: Process liveness
+      security: []
+      responses:
+        "200":
+          description: The process is alive
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Probe"
+  /ready:
+    get:
+      operationId: getReady
+      tags:
+        - system
+      summary: Readiness (the HTTP server is accepting requests)
+      security: []
+      responses:
+        "200":
+          description: Ready
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Probe"
+  /api/v1/status:
+    get:
+      operationId: getStatus
+      tags:
+        - system
+      summary: Capture, radio, transcription and caption state with lag and errors
+      responses:
+        "200":
+          description: Current state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Status"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /api/v1/audio/devices:
+    get:
+      operationId: listAudioDevices
+      tags:
+        - capture
+      summary: ALSA capture devices (arecord -l), or the simulated source
+      responses:
+        "200":
+          description: Devices
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AudioDevices"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /api/v1/config:
+    get:
+      operationId: getConfig
+      tags:
+        - system
+      summary: Read the configuration (secrets shown as "***")
+      responses:
+        "200":
+          description: Configuration
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Config"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    put:
+      operationId: updateConfig
+      tags:
+        - system
+      summary: Change configuration (partial; a secret sent back as "***" keeps its value)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConfigPatch"
+      responses:
+        "200":
+          description: The configuration after the change, secrets redacted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Config"
+        "400":
+          description: Invalid configuration (details list the paths, never the values)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /api/v1/capture/start:
+    post:
+      operationId: startCapture
+      tags:
+        - capture
+      summary: Start the shared capture and the radio encoders (idempotent)
+      responses:
+        "200":
+          description: Status after starting
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Status"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /api/v1/capture/stop:
+    post:
+      operationId: stopCapture
+      tags:
+        - capture
+      summary: Stop capture, radio encoders and pending transcription
+      responses:
+        "200":
+          description: Status after stopping
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Status"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /api/v1/transcription/events:
+    get:
+      operationId: streamTranscriptionEvents
+      tags:
+        - transcription
+      summary: Server-sent events; "transcript", "capture" and "transcription" events
+      responses:
+        "200":
+          description: Event stream
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                description: 'Each event is "event: <type>" and "data: <JSON>". transcript data: seq, chunkSeq, startMs, endMs (epoch milliseconds), text, language.'
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /api/v1/radio:
+    get:
+      operationId: getRadio
+      tags:
+        - radio
+      summary: Radio targets with their encoder state and browser-facing HLS URL
+      responses:
+        "200":
+          description: Targets
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RadioStatus"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /api/v1/captions/status:
+    get:
+      operationId: getCaptionsStatus
+      tags:
+        - captions
+      summary: Caption destinations, without secrets
+      responses:
+        "200":
+          description: Caption state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CaptionsStatus"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+  responses:
+    Unauthorized:
+      description: Missing or wrong bearer token
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+  schemas:
+    Error:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: object
+          required:
+            - code
+            - message
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+            details:
+              type: array
+              items:
+                type: object
+                properties:
+                  path:
+                    type: string
+                  message:
+                    type: string
+    Probe:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          enum:
+            - ok
+            - ready
+    Status:
+      type: object
+      required:
+        - startedAt
+        - uptimeSec
+        - capture
+        - voice
+        - radio
+        - transcription
+        - captions
+      properties:
+        startedAt:
+          type: string
+          format: date-time
+        uptimeSec:
+          type: integer
+        capture:
+          type: object
+          properties:
+            mode:
+              type: string
+              enum:
+                - alsa
+                - simulated
+            device:
+              type: string
+            running:
+              type: boolean
+            state:
+              type: string
+              enum:
+                - stopped
+                - running
+                - restarting
+            restarts:
+              type: integer
+            lastError:
+              type:
+                - string
+                - "null"
+        radio:
+          $ref: "#/components/schemas/RadioStatus/properties/targets"
+        transcription:
+          type: object
+          description: "Transcription mode and state: queue depth, processed/dropped/stale chunks, lag in ms of the last chunk"
+          properties:
+            configured:
+              type: boolean
+            busy:
+              type: boolean
+            queued:
+              type: integer
+            maxQueue:
+              type: integer
+            processed:
+              type: integer
+            dropped:
+              type: integer
+            stale:
+              type: integer
+            failed:
+              type: integer
+            lagMs:
+              type:
+                - integer
+                - "null"
+            lastError:
+              type:
+                - string
+                - "null"
+            mode: &a1
+              type: string
+              enum:
+                - on
+                - off
+                - auto
+              description: "on: always. auto: only while speech is detected (VAD). off: never."
+        captions:
+          $ref: "#/components/schemas/CaptionsStatus"
+        voice:
+          type: object
+          properties:
+            open:
+              type: boolean
+            lastVoiceMs:
+              type:
+                - integer
+                - "null"
+    AudioDevices:
+      type: object
+      required:
+        - devices
+        - error
+      properties:
+        devices:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+                description: ALSA device for capture.device, e.g. hw:1,0
+              card:
+                type: integer
+              device:
+                type: integer
+              cardName:
+                type: string
+              deviceName:
+                type: string
+        error:
+          type:
+            - string
+            - "null"
+    Config:
+      type: object
+      description: The configuration as stored (secrets are "***" or null)
+      required:
+        - capture
+        - voice
+        - radio
+        - auditor
+        - captions
+      properties:
+        capture:
+          type: object
+          properties:
+            mode:
+              type: string
+              enum:
+                - alsa
+                - simulated
+            device:
+              type: string
+            channels:
+              type: integer
+              enum:
+                - 1
+                - 2
+            sampleRate:
+              type: integer
+              enum:
+                - 44100
+                - 48000
+            chunkSeconds:
+              type: number
+              minimum: 1
+              maximum: 30
+            autostart:
+              type: boolean
+        radio:
+          type: object
+          properties:
+            bitrate:
+              type: string
+              example: 96k
+            targets:
+              type: array
+              maxItems: 8
+              items:
+                $ref: "#/components/schemas/RadioTarget"
+        auditor:
+          type: object
+          properties:
+            url:
+              type:
+                - string
+                - "null"
+              description: liturgos-auditor base URL (POST /inference)
+            apiKey:
+              type:
+                - string
+                - "null"
+              description: Secret
+            language:
+              type: string
+              example: fi
+            timeoutMs:
+              type: integer
+            maxQueue:
+              type: integer
+            mode: *a1
+        captions:
+          type: object
+          properties:
+            relay:
+              type: object
+              description: web-radio-relay caption publishing (POST /api/v1/captions)
+              properties:
+                mode: *a1
+                url:
+                  type:
+                    - string
+                    - "null"
+                token:
+                  type:
+                    - string
+                    - "null"
+                  description: "Secret: the relay RELAY_API_TOKEN"
+            youtube:
+              type: object
+              description: "YouTube caption delivery. Deferred: auto (stream online) behaves as off for now."
+              properties:
+                mode: *a1
+                streamKey:
+                  type:
+                    - string
+                    - "null"
+                  description: Secret
+                delayMs:
+                  type: integer
+        voice:
+          type: object
+          properties:
+            thresholdDb:
+              type: number
+              minimum: -90
+              maximum: -10
+              description: Speech threshold in dBFS (RMS)
+            hangoverSeconds:
+              type: number
+              minimum: 0.5
+              maximum: 30
+            prerollSeconds:
+              type: number
+              minimum: 0
+              maximum: 5
+              description: Audio kept before speech, sent when auto targets start
+    ConfigPatch:
+      type: object
+      description: Any part of the Config object; nested objects are merged, arrays replaced
+      additionalProperties: false
+      properties:
+        capture:
+          type: object
+        radio:
+          type: object
+        auditor:
+          type: object
+        captions:
+          type: object
+    RadioTarget:
+      type: object
+      required:
+        - id
+      properties:
+        id:
+          type: string
+          pattern: ^[a-z0-9-]{1,40}$
+        name:
+          type: string
+        rtmpUrl:
+          type:
+            - string
+            - "null"
+          description: RTMP(S) ingest (web-radio-relay or local Tuberadio); the stream key is redacted
+        hlsUrl:
+          type:
+            - string
+            - "null"
+          description: Public HLS URL for listeners
+        mode: *a1
+    RadioStatus:
+      type: object
+      required:
+        - targets
+      properties:
+        targets:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              name:
+                type: string
+              hlsUrl:
+                type:
+                  - string
+                  - "null"
+              state:
+                type: string
+                enum:
+                  - off
+                  - unconfigured
+                  - waiting
+                  - running
+                  - stopped
+                  - restarting
+              restarts:
+                type: integer
+              lastError:
+                type:
+                  - string
+                  - "null"
+              dropped:
+                type: integer
+              mode: *a1
+    CaptionsStatus:
+      type: object
+      required:
+        - relay
+        - youtube
+      properties:
+        relay:
+          type: object
+          properties:
+            configured:
+              type: boolean
+            running:
+              type: boolean
+            streamId:
+              type:
+                - string
+                - "null"
+            queued:
+              type: integer
+            sent:
+              type: integer
+            failed:
+              type: integer
+            dropped:
+              type: integer
+            lastError:
+              type:
+                - string
+                - "null"
+            lastSentAt:
+              type:
+                - string
+                - "null"
+              format: date-time
+            mode: *a1
+        youtube:
+          type: object
+          properties:
+            configured:
+              type: boolean
+            running:
+              type: boolean
+            delayMs:
+              type: integer
+            sent:
+              type: integer
+            failed:
+              type: integer
+            lastError:
+              type:
+                - string
+                - "null"
+            mode: *a1
+            effective:
+              type: string
+              enum:
+                - on
+                - off
