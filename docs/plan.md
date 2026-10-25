@@ -26,9 +26,54 @@ Hama USB audio capture (ALSA)
           |                         transcript events --> PiVoice SSE --> PiMatrix UI
           |
           +--> transcript text --> live-captions-yt core --> YouTube caption ingestion
+          |
+          +--> authenticated outbound caption publish --> public caption relay --> radio listener page (SSE)
 ```
 
 Capture is shared; consumer delivery is independent. A radio or caption failure must not restart the physical capture or stop unrelated consumers. Do not proxy media bytes through the PiVoice control API.
+
+
+## Network and security boundary
+
+**Boundary definition:** the Raspberry Pi / Pi LAN is a private, untrusted-from-the-Internet zone. PiVoice is a private control-and-capture service, not a public web service. No Internet-originated connection may reach PiVoice, its control API, SSH, ALSA, or other Pi-LAN devices. The radio and caption experience may be public, but it must be delivered through a separately exposed public edge/service.
+
+```text
+Church / Pi LAN (private)                         Public Internet
+┌─────────────────────────────┐                  ┌────────────────────────────┐
+│ PiMatrix UI ──LAN──> PiVoice│                  │ Public radio HLS + player  │
+│                   │         │                  │ Public caption SSE/relay  │
+│ Hama mic ──> capture/fanout │                  └──────────────▲─────────────┘
+└───────────────────┬─────────┘                                 │
+                    │ outbound-only, destination allowlisted    │
+                    ├── RTMP/RTMPS audio ──> public Tuberadio ───┤
+                    ├── HTTPS captions ─────> authenticated relay┘
+                    └── HTTPS inference ────> Auditor (where deployed)
+```
+
+### Required network policy
+
+- **No inbound Internet access to the Pi LAN.** Do not port-forward PiVoice, PiMatrix, SSH, RTSP/RTMP ingest, or any internal service directly from the router. Do not expose PiVoice's API or its SSE endpoint publicly.
+- **PiMatrix-to-PiVoice control:** LAN-only, with authentication even on the LAN where practical. Restrict the API listener/firewall to the management subnet and the PiMatrix origin; CORS is not an access-control mechanism.
+- **Public listener traffic:** browsers fetch radio HLS and caption SSE from a public-facing radio/caption host, not from the Pi. Publish the caption stream to that host using an authenticated outbound connection. The caption relay must enforce a stream-specific read URL/token or equivalent access policy appropriate to whether the radio is public.
+- **PiVoice egress allowlist:** permit only configured destinations and required ports. Prefer HTTPS/TLS for APIs and caption publishing. Use RTMPS if the selected radio ingest supports it; otherwise document that plain RTMP is unencrypted and use it only on a trusted path or through a protected tunnel. Never assume a port is safe merely because it is conventional.
+- **Auditor placement:** if Auditor is on the Pi LAN, allow PiVoice to reach only its fixed host/port and do not publish it. If Auditor is remote, use HTTPS and service authentication; do not open a public inbound route to the Pi to make transcription work.
+- **Firewall/router:** document exact source, destination, protocol, and purpose for every allowed rule. Default-deny both unsolicited inbound and unnecessary east-west traffic. Keep router port-forward rules separate from host firewall rules.
+- **Secrets and identity:** separate credentials for radio ingest, caption publish, caption read (if needed), Auditor, and YouTube caption delivery. Keep them out of URLs where possible, source control, logs, status responses, and browser-visible configuration. Rotate/revoke credentials independently.
+- **Failure isolation:** loss of Internet egress or the public relay must not expose a fallback listener on the Pi or interrupt local control/capture. Buffering must be bounded; on prolonged caption outage, drop stale caption events rather than replaying misleading delayed “live” captions.
+
+### Port inventory (to be finalized against actual deployments)
+
+| Flow | Direction from Pi LAN | Protocol/port | Exposure rule |
+| --- | --- | --- | --- |
+| PiMatrix browser to PiVoice API/SSE | LAN-local | HTTPS preferred; exact port configured | LAN only; never router-forwarded |
+| PiVoice to Tuberadio ingest | Outbound | RTMP/RTMPS; exact configured port | Destination allowlist; prefer TLS |
+| Listener browser to radio HLS | Internet to public host | HTTPS 443 | Expose only on public radio host/reverse proxy |
+| PiVoice to public caption relay | Outbound | HTTPS 443 | Authenticated publish; no inbound callback |
+| Listener browser to caption SSE | Internet to public host | HTTPS 443 | Public edge only; separate read policy from publish credentials |
+| PiVoice to Auditor | Outbound | HTTPS or fixed LAN service port | Fixed destination; never expose Auditor just for PiVoice |
+| Administration/SSH | Admin LAN/VPN only | Configured SSH port | No public port-forward |
+
+Do not finalize firewall commands or claim a port is required until deployment locations and the selected RTMP/TLS capabilities are verified.
 
 ## Technical decisions
 
@@ -38,6 +83,8 @@ Capture is shared; consumer delivery is independent. A radio or caption failure 
 - Ensure browser CORS covers the HLS playlist and every segment/resource fetched by JavaScript players. Use an explicit origin allowlist based on the PiMatrix UI origin; avoid wildcard origins when credentials are used.
 - Send short, bounded audio chunks to Auditor's `POST /inference` endpoint using multipart `file` and `language`. Support configured API-key authentication, timeouts, retries, bounded queues, lag reporting, and transcript sequence/offset tracking.
 - Use the live-captions-yt core for YouTube caption delivery; do not reimplement the YouTube caption protocol in PiVoice. Verify the core's supported programmatic API before choosing the adapter.
+- For web-radio captions, publish transcript events over an authenticated outbound connection to a public caption relay; listeners receive them from the public host over SSE and render them beside the audio player. Do not expose PiVoice SSE to listeners or rely on the HTML audio element to render captions.
+- Keep the public listener plane (HLS and caption read) separate from the private control plane (PiMatrix/PiVoice). The Pi should not need any inbound Internet port-forward for live radio or captions.
 - Important distinction: YouTube's caption ingestion URL/key are not the same as the video's RTMP ingest address/key. The caption sender must receive caption-specific configuration. The video stream itself must be delivered to YouTube separately unless a separate video relay is deliberately added.
 - Prefer Podman-compatible deployment on the Pi. Keep device access limited to the capture service and pass the ALSA device through explicitly.
 - Store secrets outside source control. Status/config read operations must not return API keys or caption keys.
@@ -70,6 +117,7 @@ This is a proposed initial contract; confirm the LCYT integration surface and re
 ### Phase 0 — Verify integration contracts and hardware
 
 - Inspect Tuberadio's RTMP ingest, HLS URL layout, CORS handling, and runtime configuration.
+- Draw and verify the actual deployment trust zones; inventory required ingress/egress by source, destination, protocol and port. Confirm whether Tuberadio and the caption relay are public services, and whether RTMPS is supported.
 - Inspect the current live-captions-yt core API and determine how PiVoice can create/configure/start/stop a sender without its UI or a separate long-lived LCYT web app.
 - Confirm Auditor endpoint authentication and expected audio formats.
 - On the Pi, enumerate ALSA devices and test the Hama microphone input, sample formats, sample rates, channel count, gain, and clipping.
@@ -98,7 +146,7 @@ This is a proposed initial contract; confirm the LCYT integration surface and re
 ### Phase 3 — Web radio integration
 
 - Publish an audio-only RTMP stream into Tuberadio.
-- Configure browser-facing HLS URL and CORS for the PiMatrix UI origin, including playlist and segment responses.
+- Configure browser-facing HLS URL and CORS for the PiMatrix UI origin, including playlist and segment responses. Keep this listener on the public radio host; do not serve public HLS directly from PiVoice.
 - Report stream health and reconnect state through PiVoice.
 - Test playback from a separate browser/device on the church LAN, including reconnect after capture or Tuberadio restart.
 
@@ -109,7 +157,8 @@ This is a proposed initial contract; confirm the LCYT integration surface and re
 - Implement bounded chunk generation and upload to `/inference`.
 - Preserve monotonically increasing chunk IDs and audio-time offsets.
 - Implement timeouts, limited retries, queue limits, lag metrics and recoverable errors.
-- Publish transcript/status events through SSE.
+- Publish transcript/status events through LAN-only PiVoice SSE for PiMatrix.
+- Publish live-radio captions separately to the public caption relay using authenticated outbound HTTPS; provide listener SSE from the public host, with a caption display beside the audio player. Keep publish credentials server-side and distinct from listener access.
 - Test silence, noisy input, service unavailable, slow inference and reconnecting UI clients.
 
 **Exit criteria:** PiMatrix can observe live transcript events and transcription failures without interrupting radio.
@@ -139,6 +188,7 @@ This is a proposed initial contract; confirm the LCYT integration surface and re
 - Add persistent configuration, safe secret injection, startup ordering and health checks.
 - Test reboot recovery, unplug/replug, consumer outages, sustained operation, CPU/memory use and network disconnects.
 - Verify CORS, authentication, log redaction and that no public control endpoints are unintentionally exposed.
+- Verify the router has no port-forward to PiVoice/PiMatrix/SSH and test from an external network that only intended public-host ports are reachable.
 - Document installation, troubleshooting, API usage and acceptance-test steps.
 
 **Exit criteria:** reproducible Pi deployment, documented recovery behavior, CI green and end-to-end acceptance checks passed.
