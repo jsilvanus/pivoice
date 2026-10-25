@@ -1,0 +1,26 @@
+{
+  "name": "pivoice",
+  "version": "1.0.0",
+  "description": "PiVoice: Hama microphone capture for web radio, live transcription (liturgos-auditor) and YouTube captions",
+  "type": "module",
+  "private": true,
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=24"
+  },
+  "main": "src/main.js",
+  "bin": {
+    "pivoice": "cli/pivoice.js"
+  },
+  "scripts": {
+    "start": "node src/main.js",
+    "generate": "node scripts/generate-cli.js",
+    "check:generated": "node scripts/generate-cli.js --check",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "lcyt": "^3.0.0",
+    "yaml": "^2.9.1",
+    "zod": "^4.6.7"
+  }
+}
