@@ -261,6 +261,25 @@ components:
               enum:
                 - alsa
                 - simulated
+            policy:
+              type: string
+              enum:
+                - on
+                - off
+                - auto
+              description: "on: capture continuously; off: no capture; auto: periodically probe for sound, capture while sound is present, then return to probing after quiet timeout."
+            autoPollSeconds:
+              type: integer
+              minimum: 5
+              maximum: 3600
+            autoProbeSeconds:
+              type: integer
+              minimum: 1
+              maximum: 5
+            autoQuietSeconds:
+              type: integer
+              minimum: 5
+              maximum: 600
             device:
               type: string
             running:
@@ -369,6 +388,21 @@ components:
               enum:
                 - alsa
                 - simulated
+            policy:
+              type: string
+              enum: [on, off, auto]
+            autoPollSeconds:
+              type: integer
+              minimum: 5
+              maximum: 3600
+            autoProbeSeconds:
+              type: integer
+              minimum: 1
+              maximum: 5
+            autoQuietSeconds:
+              type: integer
+              minimum: 5
+              maximum: 600
             device:
               type: string
             channels:
