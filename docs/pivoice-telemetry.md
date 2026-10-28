@@ -5,10 +5,12 @@ This is the shared PiVoice → PiGateway wire contract. Keep the protocol defini
 ## Transport and liveness
 
 - UDP, default destination port **3101**.
-- One fixed **42-byte** packet: 20-byte header + 22-byte payload.
-- PiVoice sends a full snapshot every **100 ms**, including when capture is stopped.
-- A valid packet refreshes PiGateway's heartbeat. State becomes stale after **6 seconds** without a valid packet.
-- No retransmissions, separate heartbeat message, JSON or audio payload.
+- Fixed **42-byte** packet: 20-byte header + 22-byte snapshot payload.
+- Type `0x01`: telemetry snapshot, sent every 100 ms only while capture is running, and on capture state transitions (including the final stopped state).
+- Type `0x02`: health/status poll completed. PiVoice sends this after its status endpoint has completed the poll, including a full current snapshot.
+- No idle periodic packets, retransmissions, JSON or audio payload.
+- A valid packet refreshes PiGateway's TTL. The gateway retains the latest snapshot and sets `stale: true` after **6 seconds** without a valid packet; it does not erase the last values.
+- `lastPollAt` records the most recent completed poll message. A poll only counts after it has completed.
 - PiGateway can restrict senders with `PIGATEWAY_PIVOICE_ALLOWED_HOSTS`.
 - All multi-byte integers are big-endian. Audio samples are not part of this protocol.
 
@@ -18,7 +20,7 @@ This is the shared PiVoice → PiGateway wire contract. Keep the protocol defini
 |---:|---:|---|---|
 | 0 | 2 | Magic | ASCII `PV` (`0x50 0x56`) |
 | 2 | 1 | Version | `1` |
-| 3 | 1 | Type | `0x01` fixed telemetry snapshot |
+| 3 | 1 | Type | `0x01` snapshot; `0x02` poll completed |
 | 4 | 2 | Flags | Reserved; must be zero |
 | 6 | 2 | Payload length | `22` |
 | 8 | 4 | Sequence | Unsigned 32-bit counter, wraps at 2³² |
@@ -49,4 +51,5 @@ For meter values other than the unavailable sentinel, divide by 1,000 to get dBF
 - Invalid packets and packets from disallowed sender IPs do not refresh liveness.
 - Stores the latest snapshot in memory.
 - Exposes it as `pivoice` in `GET /api/v1/status` and emits the `pivoice` event on `GET /api/v1/events` (SSE).
-- Reports `connected: false, stale: true` after six seconds without a valid packet.
+- `lastPollAt` records the latest type `0x02` packet.
+- After six seconds without a valid packet, reports `connected: false, stale: true` while preserving the last telemetry values.
