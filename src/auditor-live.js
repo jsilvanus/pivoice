@@ -151,9 +151,18 @@ export class AuditorLiveClient extends EventEmitter {
         if (signal.aborted || this.#sessionId !== id) return;
         this.emit('live-error', err);
         await new Promise((resolve) => {
-          const timer = setTimeout(resolve, backoffMs);
+          const onAbort = () => {
+            clearTimeout(timer);
+            signal.removeEventListener('abort', onAbort);
+            resolve();
+          };
+          const timer = setTimeout(() => {
+            signal.removeEventListener('abort', onAbort);
+            resolve();
+          }, backoffMs);
           timer.unref?.();
-          signal.addEventListener('abort', () => { clearTimeout(timer); resolve(); }, { once: true });
+          signal.addEventListener('abort', onAbort, { once: true });
+          if (signal.aborted) onAbort();
         });
         backoffMs = Math.min(5000, backoffMs * 2);
       }
