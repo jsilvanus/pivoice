@@ -9,7 +9,10 @@ export function ffmpegCaptureArgs({ device, channels, sampleRate }) {
   return [
     '-hide_banner', '-loglevel', 'warning', '-nostdin',
     '-f', 'alsa', '-channels', String(channels), '-sample_rate', String(sampleRate), '-i', device,
-    '-ac', String(CHANNELS), '-ar', String(SAMPLE_RATE), '-f', 's16le', 'pipe:1',
+    // Analysis branch: fixed 16 kHz mono PCM for metering, VAD and transcription.
+    '-map', '0:a:0', '-ac', String(CHANNELS), '-ar', String(SAMPLE_RATE), '-f', 's16le', 'pipe:1',
+    // Source-quality branch: preserve the configured capture rate and channel count.
+    '-map', '0:a:0', '-ac', String(channels), '-ar', String(sampleRate), '-f', 's16le', 'pipe:3',
   ];
 }
 
@@ -32,7 +35,7 @@ export class CaptureSupervisor extends EventEmitter {
   #backoffMs;
   #launchedAt = 0;
   #base = 0;
-  #bytes = 0;
+  #bytes = 0;\n  #sourceBytes = 0;
   #restarts = 0;
   #lastError = null;
   #stderrLine = '';
@@ -89,7 +92,7 @@ export class CaptureSupervisor extends EventEmitter {
   #launch() {
     this.#base = this.#now();
     this.#launchedAt = this.#base;
-    this.#bytes = 0;
+    this.#bytes = 0;\n    this.#sourceBytes = 0;
 
     if (this.#config.mode === 'simulated') {
       this.#setState('running');
@@ -98,7 +101,7 @@ export class CaptureSupervisor extends EventEmitter {
       return;
     }
 
-    const child = this.#spawn('ffmpeg', ffmpegCaptureArgs(this.#config), { stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = this.#spawn('ffmpeg', ffmpegCaptureArgs(this.#config), { stdio: ['ignore', 'pipe', 'pipe', 'pipe'] });
     this.#child = child;
     this.#setState('running');
     child.stdout.on('data', (buf) => {
