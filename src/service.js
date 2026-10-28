@@ -9,6 +9,7 @@ import { Chunker } from './pcm.js';
 import { RadioOutputs } from './radio.js';
 import { Transcriber } from './transcriber.js';
 import { VoiceGate } from './vad.js';
+import { SpectralClassifier } from './spectral.js';
 import { PiVoiceTelemetryPublisher } from './telemetry.js';
 
 export class ServiceError extends Error {
@@ -43,6 +44,7 @@ export class PiVoiceService {
   #telemetry = null;
   #liveAuditor = null;
   #meter = { rmsDbfs: null, peakDbfs: null, measuredAt: 0 };
+  #spectral;
 
   constructor({
     store, spawn, fetchFn = globalThis.fetch, createSender, execFile, now = Date.now,
@@ -65,6 +67,11 @@ export class PiVoiceService {
 
     this.radio.configure({ targets: cfg.radio.targets, bitrate: cfg.radio.bitrate, sampleRate: cfg.capture.sampleRate, channels: cfg.capture.channels });
     this.#buildVoice(cfg);
+    this.#spectral = new SpectralClassifier({ sampleRate: 16000 });
+    this.#spectral.on('change', (status) => {
+      this.#publish('classification', status);
+      if (status.label === 'music') this.#maybeStartAuditorLive('music');
+    });
     this.#applyAuditor(cfg);
     this.#buildCaptions(cfg);
 
@@ -217,6 +224,7 @@ export class PiVoiceService {
       capture: { ...this.capture.status(), policy: cfg.capture.policy, autoPollMode: cfg.capture.autoPollMode, autoPollSeconds: cfg.capture.autoPollSeconds },
       auditorLive: this.#liveAuditor?.status() ?? { configured: false, running: false, sessionId: null },
       voice: { open: this.voice.open, lastVoiceMs: Number.isFinite(this.voice.lastVoiceMs) ? this.voice.lastVoiceMs : null },
+      spectral: this.#spectral.status,
       radio: this.radio.status(),
       transcription: { mode: cfg.auditor.mode, ...this.transcriber.status() },
       captions: this.captionsStatus(),
@@ -239,8 +247,8 @@ export class PiVoiceService {
     return {
       rmsDbfs: meterFresh ? this.#meter.rmsDbfs : null,
       peakDbfs: meterFresh ? this.#meter.peakDbfs : null,
-      classification: !captureRunning ? 'unknown' : this.voice.open ? 'speech' : 'silence',
-      confidence: null,
+      classification: !captureRunning ? 'unknown' : (this.#spectral.status.label === 'unknown' ? (this.voice.open ? 'speech' : 'silence') : this.#spectral.status.label),
+      confidence: captureRunning ? this.#spectral.status.confidence : null,
       capture: {
         state: captureStatus.state === 'running' && captureStatus.running
           ? 'running'
@@ -311,7 +319,9 @@ export class PiVoiceService {
     if (!this.#liveAuditor || cfg.mode === 'off' || this.#liveAuditor.running) return;
     const shouldStart = cfg.startWhen === 'capture_start'
       ? trigger === 'capture_start'
-      : trigger === 'speech';
+      : cfg.startWhen === 'speech'
+        ? trigger === 'speech'
+        : trigger === 'speech' || trigger === 'music';
     if (shouldStart) {
       this.#liveAuditor.start().catch((err) => {
         this.#publish('auditor-live', { type: 'error', message: err.message });
@@ -373,6 +383,7 @@ export class PiVoiceService {
 
   #onPcm(pcm, startMs) {
     this.#meter = measurePcm(pcm, this.#now());
+    this.#spectral.push(pcm, startMs + pcm.length / 32);
     this.voice.push(pcm, startMs);
     const captureCfg = this.#store.get().capture;
     if (captureCfg.policy === 'auto' && this.#autoCaptureStartedAt !== null) {
