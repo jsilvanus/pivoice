@@ -11,11 +11,11 @@ const CAPTURE_STATE = { stopped: 0, running: 1, error: 2 };
 const SAMPLE_FORMAT = { unknown: 0, S16LE: 1, S24LE: 2, S32LE: 3, FLOAT32: 4 };
 const PUBLISHER_STATE = { stopped: 0, publishing: 1, reconnecting: 2, error: 3 };
 
-export function encodePiVoicePacket(snapshot, sequence, timestampMs = Date.now()) {
+export function encodePiVoicePacket(snapshot, sequence, timestampMs = Date.now(), messageType = 1) {
   const packet = Buffer.alloc(HEADER_BYTES + PAYLOAD_BYTES);
   packet.write('PV', 0, 'ascii');
   packet.writeUInt8(1, 2);
-  packet.writeUInt8(1, 3); // fixed telemetry snapshot
+  packet.writeUInt8(messageType, 3); // 1=snapshot, 2=health poll completed
   packet.writeUInt16BE(0, 4); // flags reserved
   packet.writeUInt16BE(PAYLOAD_BYTES, 6);
   packet.writeUInt32BE(sequence >>> 0, 8);
@@ -43,7 +43,7 @@ function validUnsigned(value, max) {
   return Number.isInteger(value) && value >= 0 && value <= max ? value : 0;
 }
 
-/** Periodically sends the latest state even when capture is stopped; receipt is the gateway heartbeat. */
+/** Sends while capture is active, plus explicit transition and completed-poll messages. */
 export class PiVoiceTelemetryPublisher {
   #host;
   #port;
@@ -66,18 +66,32 @@ export class PiVoiceTelemetryPublisher {
 
   start() {
     if (this.#timer || this.#closed) return;
-    const send = () => {
-      let packet;
-      try {
-        packet = encodePiVoicePacket(this.#snapshot(), this.#sequence++, this.#now());
-      } catch {
-        return;
-      }
-      this.#socket.send(packet, this.#port, this.#host, () => {});
+    const sendWhileCapturing = () => {
+      if (this.#snapshot()?.capture?.state !== 'running') return;
+      this.sendSnapshot();
     };
-    send();
-    this.#timer = setInterval(send, 100);
+    this.#timer = setInterval(sendWhileCapturing, 100);
     this.#timer.unref?.();
+  }
+
+  sendSnapshot() {
+    this.#send(1);
+  }
+
+  /** Sent after a health/status poll actually completes; this is not a periodic heartbeat. */
+  sendPollCompleted() {
+    this.#send(2);
+  }
+
+  #send(messageType) {
+    if (this.#closed) return;
+    let packet;
+    try {
+      packet = encodePiVoicePacket(this.#snapshot(), this.#sequence++, this.#now(), messageType);
+    } catch {
+      return;
+    }
+    this.#socket.send(packet, this.#port, this.#host, () => {});
   }
 
   stop() {
