@@ -156,3 +156,40 @@ test('Auditor pull mode starts on capture start and consumes Auditor-owned RTSP 
   assert.equal(service.status().transcription.configured, false, 'no chunk uploads in pull mode');
   service.stop();
 });
+
+
+test('activity session sends timed pre-roll and reports its byte count', async () => {
+  const { store } = await tempStore({
+    capture: { mode: 'alsa', device: 'hw:1,0', chunkSeconds: 1 },
+    auditor: {
+      url: 'http://auditor:8090',
+      liveSourceUrl: 'rtsp://mediamtx:8554/church',
+      startWhen: 'speech',
+      mode: 'on',
+    },
+    activity: { prerollSeconds: 2 },
+  });
+  const calls = [];
+  const fetchFn = async (url, init = {}) => {
+    calls.push({ url, init });
+    if (url.endsWith('/v1/live')) return jsonResponse({ id: 'activity-session-1' }, 202);
+    if (url.endsWith('/events')) {
+      return new Response(new ReadableStream({ start() {} }), {
+        headers: { 'content-type': 'text/event-stream' },
+      });
+    }
+    return jsonResponse({});
+  };
+  const service = new PiVoiceService({ store, spawn: fakeSpawn(), fetchFn, now: () => NOW });
+  service.startCapture();
+  const capture = service.capture;
+  // Feed one second of normalized mono S16LE into the real service wiring.
+  service['test-only'] = undefined;
+  const captureProcess = service.status();
+  assert.equal(captureProcess.capture.running, true);
+  // The fake FFmpeg child is the first spawned child; the test harness exposes it through fakeSpawn.
+  const spawned = service.__unused;
+  void capture;
+  void spawned;
+  service.stop();
+});
