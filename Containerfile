@@ -8,7 +8,10 @@ RUN apt-get update \
 
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN npm ci --omit=dev
+RUN npm ci --omit=dev \
+ && npm install --no-save --package-lock=false onnxruntime-node
+COPY scripts/download-silero-model.js ./scripts/download-silero-model.js
+RUN node scripts/download-silero-model.js
 COPY src ./src
 COPY cli ./cli
 COPY openapi ./openapi
