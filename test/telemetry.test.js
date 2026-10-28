@@ -46,3 +46,20 @@ test('unavailable meter and confidence use the protocol sentinels', () => {
   assert.equal(packet.readInt32BE(24), -2147483648);
   assert.equal(packet.readUInt8(29), 255);
 });
+
+
+test('service telemetry snapshot reports stopped capture as unknown and no fake confidence', async () => {
+  const { PiVoiceService } = await import('../src/service.js');
+  const { tempStore, fakeSpawn } = await import('./helpers.js');
+  const { store } = await tempStore({ capture: { mode: 'simulated' } });
+  const service = new PiVoiceService({ store, spawn: fakeSpawn() });
+  try {
+    const snapshot = service.telemetrySnapshot();
+    assert.equal(snapshot.capture.state, 'stopped');
+    assert.equal(snapshot.classification, 'unknown');
+    assert.equal(snapshot.confidence, null);
+    assert.equal(snapshot.publisher, 'stopped');
+  } finally {
+    service.stop();
+  }
+});
