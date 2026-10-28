@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { VoiceGate, rms } from '../src/vad.js';
+import { SpectralClassifier, VoiceGate, rms } from '../src/vad.js';
 
 const loud = (ms) => Buffer.from(new Int16Array(ms * 16).fill(8000).buffer);
 const quiet = (ms) => Buffer.alloc(ms * 32);
@@ -38,7 +38,6 @@ test('pre-roll is capped at the configured length', () => {
 
 
 test('spectral classifier skips quiet frames and detects tonal music versus noise-like speech', () => {
-  const { SpectralClassifier } = require('../src/vad.js');
   const classifier = new SpectralClassifier({ thresholdDb: -45 });
   const silence = Buffer.alloc(1024 * 2);
   assert.equal(classifier.push(silence).label, 'silence');
