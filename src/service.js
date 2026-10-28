@@ -57,12 +57,12 @@ export class PiVoiceService {
     this.transcriber = new Transcriber({ now, staleMs });
     this.#chunker = new Chunker({ chunkMs: cfg.capture.chunkSeconds * 1000 });
 
-    this.radio.configure({ targets: cfg.radio.targets, bitrate: cfg.radio.bitrate });
+    this.radio.configure({ targets: cfg.radio.targets, bitrate: cfg.radio.bitrate, sampleRate: cfg.capture.sampleRate, channels: cfg.capture.channels });
     this.#buildVoice(cfg);
     this.#applyAuditor(cfg);
     this.#buildCaptions(cfg);
 
-    this.capture.on('pcm', ({ pcm, startMs }) => this.#onPcm(pcm, startMs));
+    this.capture.on('pcm', ({ pcm, startMs }) => this.#onPcm(pcm, startMs));\n    this.capture.on('source', ({ pcm }) => this.radio.write(pcm));
     this.capture.on('state', (status) => {
       this.#publish('capture', status);
       this.#telemetry?.sendSnapshot();
@@ -140,7 +140,7 @@ export class PiVoiceService {
       if (wasRunning) this.startCapture();
     }
     if (changed('voice')) this.#buildVoice(next);
-    if (changed('radio')) this.radio.configure({ targets: next.radio.targets, bitrate: next.radio.bitrate });
+    if (changed('radio') || changed('capture')) this.radio.configure({ targets: next.radio.targets, bitrate: next.radio.bitrate, sampleRate: next.capture.sampleRate, channels: next.capture.channels });
     if (changed('auditor')) this.#applyAuditor(next);
     if (changed('captions')) this.#buildCaptions(next);
   }
