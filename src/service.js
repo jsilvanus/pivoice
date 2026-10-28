@@ -160,6 +160,7 @@ export class PiVoiceService {
   #stopCaptureNow() {
     this.radio.stop();
     this.capture.stop();
+    this.#preroll.clear();
     this.#spectral.reset();
     this.#silero.reset();
     this.transcriber.clear();
@@ -253,6 +254,7 @@ export class PiVoiceService {
       uptimeSec: Math.round((this.#now() - this.#startedAt) / 1000),
       capture: { ...this.capture.status(), policy: cfg.capture.policy, autoPollMode: cfg.capture.autoPollMode, autoPollSeconds: cfg.capture.autoPollSeconds },
       auditorLive: this.#liveAuditor?.status() ?? { configured: false, running: false, sessionId: null },
+      preRoll: { durationMs: this.#preroll.durationMs, configuredSeconds: cfg.activity.prerollSeconds },
       voice: { open: this.voice.open, lastVoiceMs: Number.isFinite(this.voice.lastVoiceMs) ? this.voice.lastVoiceMs : null },
       spectral: this.#spectral.status,
       speechDetection: this.#silero.status,
