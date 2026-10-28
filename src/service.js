@@ -278,7 +278,7 @@ export class PiVoiceService {
     return {
       rmsDbfs: meterFresh ? this.#meter.rmsDbfs : null,
       peakDbfs: meterFresh ? this.#meter.peakDbfs : null,
-      classification: !captureRunning ? 'unknown' : (this.#spectral.status.label === 'unknown' ? (this.voice.open ? 'speech' : 'silence') : this.#spectral.status.label),
+      classification: !captureRunning ? 'unknown' : this.#speechActive ? 'speech' : (this.#spectral.status.label === 'music' ? 'music' : (this.voice.open ? 'speech' : 'silence')),
       confidence: captureRunning && Number.isFinite(this.#spectral.status.confidence) ? Math.round(this.#spectral.status.confidence * 100) : null,
       capture: {
         state: captureStatus.state === 'running' && captureStatus.running
@@ -357,6 +357,7 @@ export class PiVoiceService {
     const cfg = this.#store.get().auditor;
     if (!this.capture.running) throw new ServiceError(409, 'capture_not_running', 'Capture must be running before an activity session can start');
     if (!this.#liveAuditor || cfg.mode === 'off') throw new ServiceError(409, 'auditor_not_configured', 'Auditor live mode is not configured or is disabled');
+    if (cfg.startWhen === 'capture_start') throw new ServiceError(409, 'capture_start_mode', 'Auditor is configured to start with capture, not on activity');
     if (!['speech', 'music'].includes(trigger)) throw new ServiceError(400, 'invalid_trigger', 'trigger must be speech or music');
     const preRollPcm = this.#preroll.snapshot();
     const status = await this.#liveAuditor.start({ preRollPcm });
