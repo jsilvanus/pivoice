@@ -10,6 +10,8 @@ test('ffmpeg reads ALSA once and fans out analysis PCM plus source-format PCM', 
   assert.deepEqual(args.slice(args.indexOf('-f'), args.indexOf('-f') + 2), ['-f', 'alsa']);
   assert.equal(args[args.indexOf('-i') + 1], 'hw:1,0');
   assert.ok(args.includes('pipe:1'));
+  assert.ok(args.includes('-use_wallclock_as_timestamps'));
+  assert.equal(args[args.indexOf('-use_wallclock_as_timestamps') + 1], '1');
   assert.equal(args[args.indexOf('-ar') + 1], '16000');
   assert.equal(args.at(-1), 'pipe:3');
   assert.ok(args.includes('48000'));
