@@ -105,6 +105,16 @@ export class PiVoiceService {
     this.capture.on('pcm', ({ pcm, startMs }) => this.#onPcm(pcm, startMs));
     this.capture.on('source', ({ pcm }) => this.radio.write(pcm));
     this.capture.on('state', (status) => {
+      // A restarted FFmpeg process starts a new sample-time epoch. Never join
+      // buffered pre-restart audio to the new capture timeline.
+      if (status.state === 'restarting') {
+        this.#preroll.clear();
+        this.#chunker = new Chunker({ chunkMs: this.#store.get().capture.chunkSeconds * 1000 });
+        this.#spectral.reset();
+        this.#silero.reset();
+        this.#speechActive = false;
+        this.#musicActive = false;
+      }
       this.#publish('capture', status);
       this.#telemetry?.sendSnapshot();
     });
