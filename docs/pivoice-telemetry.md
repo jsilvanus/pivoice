@@ -41,7 +41,7 @@ Offsets below are absolute from the start of the complete UDP packet.
 | 38 | 1 | Publisher state | `0` stopped, `1` publishing, `2` reconnecting, `3` error |
 | 39 | 3 | Reserved | Must be zero |
 
-For meter values other than the unavailable sentinel, divide by 1,000 to get dBFS. PiVoice's current classification is its energy-based VAD: `speech` while the gate is open, `silence` while it is closed, and `unknown` when capture is stopped. It does not yet distinguish music from speech. Metering uses the 16 kHz mono S16LE analysis branch. The capture sample rate and channel count represent the configured ALSA input request; sample format remains `unknown` until the negotiated ALSA input format is exposed.
+For meter values other than the unavailable sentinel, divide by 1,000 to get dBFS. PiVoice's current classification is its energy-based VAD: `speech` while the gate is open, `silence` while it is closed, and `unknown` when capture is stopped. It does not yet distinguish music from speech, and confidence is unavailable for this deterministic gate. Metering uses the 16 kHz mono S16LE analysis branch. The capture sample rate and channel count represent the configured ALSA input request; sample format remains `unknown` until the negotiated ALSA input format is exposed.
 
 ## PiGateway state
 
