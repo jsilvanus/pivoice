@@ -103,7 +103,7 @@ export class AuditorLiveClient extends EventEmitter {
             eventName = 'message';
             return;
           }
-          const raw = dataLines.join('\\n');
+          const raw = dataLines.join('\n');
           dataLines = [];
           try {
             const data = JSON.parse(raw);
@@ -130,8 +130,8 @@ export class AuditorLiveClient extends EventEmitter {
             if (done) break;
             pending += decoder.decode(value, { stream: true });
             let newline;
-            while ((newline = pending.indexOf('\\n')) >= 0) {
-              const line = pending.slice(0, newline).replace(/\\r$/, '');
+            while ((newline = pending.indexOf('\n')) >= 0) {
+              const line = pending.slice(0, newline).replace(/\r$/, '');
               pending = pending.slice(newline + 1);
               if (!line) dispatch();
               else if (line.startsWith('id:')) lastEventId = line.slice(3).trim();
