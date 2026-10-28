@@ -43,7 +43,7 @@ Payload (22 bytes):
 | 38 | 1 | Publisher state | `0` stopped, `1` publishing, `2` reconnecting, `3` error |
 | 39 | 3 | Reserved | Zero |
 
-The current classifier is the existing energy-based voice gate: while capture is running it reports `speech` when the gate is open and `silence` otherwise. It reports `unknown` when capture is stopped. This does not claim to distinguish music from speech. Metering uses the analysis PCM (16 kHz, mono, S16LE); capture sample rate and channel count report the configured ALSA input request. The ALSA input sample format is `unknown` because ffmpeg does not currently expose the negotiated input sample format.
+The current classifier is the existing energy-based voice gate: while capture is running it reports `speech` when the gate is open and `silence` otherwise. It reports `unknown` when capture is stopped. This does not claim to distinguish music from speech, and confidence is reported as unavailable for this deterministic gate. Metering uses the analysis PCM (16 kHz, mono, S16LE); capture sample rate and channel count report the configured ALSA input request. The ALSA input sample format is `unknown` because ffmpeg does not currently expose the negotiated input sample format.
 
 ## Timing and sync
 
