@@ -11,7 +11,16 @@ export async function createApp({ env = process.env, ...deps } = {}) {
   const dataDir = env.PIVOICE_DATA_DIR ?? './data';
   const store = new ConfigStore(path.join(dataDir, 'config.json'));
   await store.load();
-  const service = new PiVoiceService({ store, ...deps });
+  const telemetryPort = Number(env.PIVOICE_GATEWAY_PORT ?? 3101);
+  if (!Number.isInteger(telemetryPort) || telemetryPort < 1 || telemetryPort > 65535) {
+    throw new Error('PIVOICE_GATEWAY_PORT must be an integer between 1 and 65535');
+  }
+  const service = new PiVoiceService({
+    store,
+    telemetryHost: env.PIVOICE_GATEWAY_HOST?.trim() || undefined,
+    telemetryPort,
+    ...deps,
+  });
   const server = createServer({
     service,
     store,
