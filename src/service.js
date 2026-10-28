@@ -63,7 +63,10 @@ export class PiVoiceService {
     this.#buildCaptions(cfg);
 
     this.capture.on('pcm', ({ pcm, startMs }) => this.#onPcm(pcm, startMs));
-    this.capture.on('state', (status) => this.#publish('capture', status));
+    this.capture.on('state', (status) => {
+      this.#publish('capture', status);
+      this.#telemetry?.sendSnapshot();
+    });
     this.transcriber.on('transcript', (event) => this.#onTranscript(event));
     this.transcriber.on('status', (status) => this.#publish('transcription', status));
 
@@ -94,7 +97,13 @@ export class PiVoiceService {
     this.radio.stop();
     this.capture.stop();
     this.transcriber.clear();
+    this.#telemetry?.sendSnapshot();
     return this.status();
+  }
+
+  /** Notify PiGateway when a status/health poll has completed. */
+  pollCompleted() {
+    this.#telemetry?.sendPollCompleted();
   }
 
   captionsStatus() {
@@ -182,11 +191,11 @@ export class PiVoiceService {
   }
 
   stop() {
-    this.#telemetry?.stop();
     this.#stream.stop();
     this.#relay.stop();
     this.#youtube.stop();
     this.stopCapture();
+    this.#telemetry?.stop();
   }
 
   #buildVoice(cfg) {
