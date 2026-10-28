@@ -5,10 +5,10 @@ import { BYTES_PER_MS, CHANNELS, SAMPLE_RATE } from './pcm.js';
 const MAX_BACKLOG_MS = 5000;
 const STABLE_AFTER_MS = 30_000;
 
-export function radioEncoderArgs({ rtmpUrl, bitrate }) {
+export function radioEncoderArgs({ rtmpUrl, bitrate, sampleRate = SAMPLE_RATE, channels = CHANNELS }) {
   return [
     '-hide_banner', '-loglevel', 'warning', '-nostdin',
-    '-f', 's16le', '-ar', String(SAMPLE_RATE), '-ac', String(CHANNELS), '-i', 'pipe:0',
+    '-f', 's16le', '-ar', String(sampleRate), '-ac', String(channels), '-i', 'pipe:0',
     '-c:a', 'aac', '-b:a', bitrate,
     '-f', 'flv', rtmpUrl,
   ];
@@ -27,7 +27,7 @@ export class RadioOutputs {
   #now;
   #minRestartMs;
   #maxRestartMs;
-  #bitrate = '96k';
+  #bitrate = '96k';\n  #sampleRate = SAMPLE_RATE;\n  #channels = CHANNELS;
   #active = false;
   #voice = false;
   #outputs = new Map();
@@ -44,7 +44,7 @@ export class RadioOutputs {
     const wanted = new Map(targets.map((t) => [t.id, t]));
     for (const [id, out] of this.#outputs) {
       const next = wanted.get(id);
-      if (!next || JSON.stringify(next) !== JSON.stringify(out.target) || out.bitrate !== bitrate) {
+      if (!next || JSON.stringify(next) !== JSON.stringify(out.target) || out.bitrate !== bitrate || out.sampleRate !== sampleRate || out.channels !== channels) {
         this.#stopOutput(out);
         this.#outputs.delete(id);
       }
@@ -52,7 +52,7 @@ export class RadioOutputs {
     for (const target of targets) {
       if (!this.#outputs.has(target.id)) {
         this.#outputs.set(target.id, {
-          target, bitrate, child: null, timer: null, state: 'stopped',
+          target, bitrate, sampleRate, channels, child: null, timer: null, state: 'stopped',
           restarts: 0, lastError: null, dropped: 0, backoffMs: this.#minRestartMs, launchedAt: 0,
         });
       }
@@ -94,7 +94,7 @@ export class RadioOutputs {
     for (const out of this.#outputs.values()) {
       const stdin = out.child?.stdin;
       if (!stdin || stdin.destroyed) continue;
-      if (stdin.writableLength > MAX_BACKLOG_MS * BYTES_PER_MS) {
+      const sourceBytesPerMs = this.#sampleRate * this.#channels * 2 / 1000;\n      if (stdin.writableLength > MAX_BACKLOG_MS * sourceBytesPerMs) {
         out.dropped++;
         continue;
       }
@@ -131,7 +131,7 @@ export class RadioOutputs {
 
   #startOutput(out) {
     if (out.child || out.timer || !this.#shouldRun(out)) return;
-    const child = this.#spawn('ffmpeg', radioEncoderArgs({ rtmpUrl: out.target.rtmpUrl, bitrate: out.bitrate }), {
+    const child = this.#spawn('ffmpeg', radioEncoderArgs({ rtmpUrl: out.target.rtmpUrl, bitrate: out.bitrate, sampleRate: out.sampleRate, channels: out.channels }), {
       stdio: ['pipe', 'ignore', 'pipe'],
     });
     out.child = child;
