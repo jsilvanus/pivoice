@@ -10,6 +10,7 @@ export class FakeChild extends EventEmitter {
   stdout = new PassThrough();
   stderr = new PassThrough();
   stdin = new PassThrough();
+  stdio = [null, this.stdout, this.stderr, new PassThrough()];
   killed = [];
   kill(signal) {
     this.killed.push(signal);
