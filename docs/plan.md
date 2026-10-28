@@ -163,6 +163,20 @@ This is a proposed initial contract; confirm the LCYT integration surface and re
 
 **Exit criteria:** PiMatrix can observe live transcript events and transcription failures without interrupting radio.
 
+## Shared activity lifecycle and rolling pre-roll (implemented; integration verification pending)
+
+PiVoice keeps shared capture running independently of consumer sessions. For gateway-controlled Auditor sessions:
+
+- Maintain a bounded rolling PCM16 mono buffer continuously while capture runs; default 5 seconds, configurable via `activity.prerollSeconds` (0–30 seconds).
+- Report speech/music classification to PiGateway over the existing UDP telemetry protocol.
+- Accept authenticated `POST /api/v1/activity/session/start` and `POST /api/v1/activity/session/stop` requests from PiGateway.
+- On start, snapshot the ring buffer and submit it as multipart pre-roll to Auditor before its live pull-source processing; continue the normal live path without gaps or duplicate pre-roll.
+- Do not own an inactivity timer in PiVoice; PiGateway is authoritative. The legacy `activity.idleCloseSeconds` API remains compatibility-only.
+- Do not stop shared capture or radio when a session closes. Clear stale pre-roll when capture stops/restarts.
+- Preserve `capture_start` as the explicit legacy always-open mode; activity-triggered mode defaults to `speech_or_music`.
+
+**Acceptance checks:** ring-buffer bounds and ordering tests pass; a gateway-opened session sends pre-roll before live processing; activity start/stop does not affect radio or capture; invalid triggers/configuration are rejected. Validate real capture format, CPU/memory and church-audio accuracy on the target Pi before deployment.
+
 ### Phase 5 — YouTube caption delivery
 
 - Implement an adapter around the verified live-captions-yt core API.
