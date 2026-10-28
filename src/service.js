@@ -379,7 +379,7 @@ export class PiVoiceService {
         : this.#autoCaptureStartedAt;
       if (this.#now() - lastSoundAt >= captureCfg.autoQuietSeconds * 1000) {
         this.#stopCaptureNow();
-        this.#scheduleAutoProbe(captureCfg.autoPollSeconds * 1000);
+        this.#scheduleAutoProbe(captureCfg.autoPollMode === 'continuous' ? 0 : captureCfg.autoPollSeconds * 1000);
         return;
       }
     }
