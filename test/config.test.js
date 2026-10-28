@@ -18,15 +18,15 @@ test('defaults are valid and closed (no targets, captions off, no secrets)', () 
   assert.equal(cfg.radio.targets.length, 0);
   assert.equal(cfg.auditor.apiKey, null);
   assert.equal(cfg.auditor.startWhen, 'capture_start');
-  assert.equal(cfg.auditor.idleCloseSeconds, 15);
+  assert.equal(cfg.activity.idleCloseSeconds, 15);
   assert.equal(cfg.auditor.liveSourceUrl, null);
 });
 
 test('invalid values are rejected', () => {
   assert.throws(() => configSchema.parse({ auditor: { url: 'not a url' } }));
   assert.throws(() => configSchema.parse({ auditor: { liveSourceUrl: 'https://not-rtsp.example' } }));
-  assert.throws(() => configSchema.parse({ auditor: { idleCloseSeconds: -1 } }));
-  assert.throws(() => configSchema.parse({ auditor: { idleCloseSeconds: 3601 } }));
+  assert.throws(() => configSchema.parse({ activity: { idleCloseSeconds: -1 } }));
+  assert.throws(() => configSchema.parse({ activity: { idleCloseSeconds: 3601 } }));
   assert.throws(() => configSchema.parse({ radio: { targets: [{ id: 'Bad Id!' }] } }));
   assert.throws(() => configSchema.parse({ radio: { targets: [{ id: 'a', rtmpUrl: 'https://x' }] } }));
 });
