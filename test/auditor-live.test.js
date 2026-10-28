@@ -35,3 +35,28 @@ test('starts a pull session, maps Auditor SSE wall times, and deletes the sessio
   assert.equal(client.status().running, false);
   assert.equal(calls.at(-1).init.method, 'DELETE');
 });
+
+
+test('stop racing a pending start deletes the session created by the late response', async () => {
+  let resolveStart;
+  const calls = [];
+  const client = new AuditorLiveClient({
+    url: 'http://auditor:8090',
+    source: 'rtsp://mediamtx:8554/church',
+    fetchFn: async (url, init = {}) => {
+      calls.push({ url, init });
+      if (init.method === 'POST') {
+        return await new Promise((resolve) => { resolveStart = resolve; });
+      }
+      return new Response('{}', { status: 200 });
+    },
+  });
+  const starting = client.start();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const stopping = client.stop();
+  resolveStart?.(new Response(JSON.stringify({ id: 'late-session' }), { status: 202 }));
+  await Promise.all([starting, stopping]);
+  assert.equal(client.status().running, false);
+  assert.equal(calls.filter((call) => call.init.method === 'DELETE').length, 1);
+  assert.ok(calls.at(-1).url.endsWith('/v1/live/late-session'));
+});
