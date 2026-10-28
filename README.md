@@ -1,6 +1,6 @@
 # PiVoice
 
-Headless audio service for the PiMatrix Raspberry Pi. One Hama USB microphone is captured once and fanned out to web radio (RTMP), live transcription through liturgos-auditor, and caption delivery to web-radio-relay and YouTube. There is no UI. PiMatrix and picontrol talk to the OpenAPI control API. Node 24, ESM, no build step.
+Headless audio service for the PiMatrix Raspberry Pi. One Hama USB microphone is captured once and fanned out into two PCM outputs: the configured source format for radio publishing, and a separate 16 kHz mono S16LE analysis stream for metering, voice detection and transcription through liturgos-auditor. Caption delivery goes to web-radio-relay and YouTube. There is no UI. PiMatrix and picontrol talk to the OpenAPI control API. Node 24, ESM, no build step.
 
 ## Modes
 
@@ -43,7 +43,7 @@ Payload (22 bytes):
 | 38 | 1 | Publisher state | `0` stopped, `1` publishing, `2` reconnecting, `3` error |
 | 39 | 3 | Reserved | Zero |
 
-The current classifier is the existing energy-based voice gate: while capture is running it reports `speech` when the gate is open and `silence` otherwise. It reports `unknown` when capture is stopped. This does not claim to distinguish music from speech, and confidence is reported as unavailable for this deterministic gate. Metering uses the analysis PCM (16 kHz, mono, S16LE); capture sample rate and channel count report the configured ALSA input request. The ALSA input sample format is `unknown` because ffmpeg does not currently expose the negotiated input sample format.
+The current classifier is the existing energy-based voice gate: while capture is running it reports `speech` when the gate is open and `silence` otherwise. It reports `unknown` when capture is stopped. This does not distinguish music from speech, and confidence is unavailable for this deterministic gate. Metering and transcription use the analysis output (16 kHz, mono, S16LE); radio encoders receive the separate source-format output at the configured capture sample rate and channel count. The reported sample format is `unknown` because ffmpeg does not currently expose the negotiated ALSA input sample format.
 
 ## Timing and sync
 
