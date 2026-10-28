@@ -16,6 +16,7 @@
     "start": "node src/main.js",
     "generate": "node scripts/generate-cli.js",
     "check:generated": "node scripts/generate-cli.js --check",
+    "setup:silero": "node scripts/setup-silero.js",
     "test": "node --test"
   },
   "dependencies": {
