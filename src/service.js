@@ -70,7 +70,8 @@ export class PiVoiceService {
     this.#spectral = new SpectralClassifier({ sampleRate: 16000 });
     this.#spectral.on('change', (status) => {
       this.#publish('classification', status);
-      if (status.label === 'music') this.#maybeStartAuditorLive('music');
+      if (status.label === 'speech') this.#maybeStartAuditorLive('speech');
+      else if (status.label === 'music') this.#maybeStartAuditorLive('music');
     });
     this.#applyAuditor(cfg);
     this.#buildCaptions(cfg);
@@ -278,7 +279,6 @@ export class PiVoiceService {
     this.voice = new VoiceGate(cfg.voice);
     this.voice.on('open', ({ preroll }) => {
       this.radio.setVoice(true, preroll);
-      this.#maybeStartAuditorLive('speech');
     });
     this.voice.on('close', () => this.radio.setVoice(false));
     this.radio.setVoice(false);
