@@ -238,12 +238,8 @@ export class PiVoiceService {
     }
     if (changed('voice')) this.#buildVoice(next);
     if (changed('radio') || changed('capture')) this.radio.configure({ targets: next.radio.targets, bitrate: next.radio.bitrate, sampleRate: next.capture.sampleRate, channels: next.capture.channels });
-    if (changed('auditor')) {
-      const previousAuditor = { ...previous.auditor, idleCloseSeconds: undefined };
-      const nextAuditor = { ...next.auditor, idleCloseSeconds: undefined };
-      if (JSON.stringify(previousAuditor) !== JSON.stringify(nextAuditor)) this.#applyAuditor(next);
-      else this.#scheduleAuditorIdleClose();
-    }
+    if (changed('auditor')) this.#applyAuditor(next);
+    if (changed('activity')) this.#scheduleAuditorIdleClose();
     if (changed('captions')) this.#buildCaptions(next);
   }
 
@@ -359,16 +355,16 @@ export class PiVoiceService {
     clearTimeout(this.#auditorIdleTimer);
     this.#auditorIdleTimer = null;
     const cfg = this.#store.get().auditor;
-    if (!this.#liveAuditor?.running || cfg.idleCloseSeconds <= 0 || cfg.startWhen === 'capture_start') return;
+    if (!this.#liveAuditor?.running || this.#store.get().activity.idleCloseSeconds <= 0 || cfg.startWhen === 'capture_start') return;
     const activity = cfg.startWhen === 'speech' ? this.#speechActive : (this.#speechActive || this.#musicActive);
     if (activity) return;
     this.#auditorIdleTimer = setTimeout(() => {
       this.#auditorIdleTimer = null;
       const current = this.#store.get().auditor;
       const stillActive = current.startWhen === 'speech' ? this.#speechActive : (this.#speechActive || this.#musicActive);
-      if (stillActive || !this.#liveAuditor?.running || current.idleCloseSeconds <= 0) return;
+      if (stillActive || !this.#liveAuditor?.running || this.#store.get().activity.idleCloseSeconds <= 0) return;
       this.#liveAuditor.stop().catch((err) => this.#publish('auditor-live', { type: 'error', message: err.message }));
-    }, cfg.idleCloseSeconds * 1000);
+    }, this.#store.get().activity.idleCloseSeconds * 1000);
     this.#auditorIdleTimer.unref?.();
   }
 
