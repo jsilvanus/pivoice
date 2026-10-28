@@ -44,7 +44,6 @@ export class PiVoiceService {
   #telemetry = null;
   #liveAuditor = null;
   #meter = { rmsDbfs: null, peakDbfs: null, measuredAt: 0 };
-  #spectral = { label: 'unknown', confidence: null, features: null };
   #spectral;
 
   constructor({
@@ -226,7 +225,6 @@ export class PiVoiceService {
       capture: { ...this.capture.status(), policy: cfg.capture.policy, autoPollMode: cfg.capture.autoPollMode, autoPollSeconds: cfg.capture.autoPollSeconds },
       auditorLive: this.#liveAuditor?.status() ?? { configured: false, running: false, sessionId: null },
       voice: { open: this.voice.open, lastVoiceMs: Number.isFinite(this.voice.lastVoiceMs) ? this.voice.lastVoiceMs : null },
-      spectral: this.#spectral,
       spectral: this.#spectral.status,
       radio: this.radio.status(),
       transcription: { mode: cfg.auditor.mode, ...this.transcriber.status() },
@@ -278,8 +276,6 @@ export class PiVoiceService {
 
   #buildVoice(cfg) {
     this.voice = new VoiceGate(cfg.voice);
-    this.spectral = new SpectralClassifier({ thresholdDb: cfg.voice.thresholdDb });
-    this.#spectral = { label: 'silence', confidence: 1, features: null };
     this.voice.on('open', ({ preroll }) => {
       this.radio.setVoice(true, preroll);
       this.#maybeStartAuditorLive('speech');
@@ -389,11 +385,6 @@ export class PiVoiceService {
   #onPcm(pcm, startMs) {
     this.#meter = measurePcm(pcm, this.#now());
     this.#spectral.push(pcm, startMs + pcm.length / 32);
-    const spectral = this.spectral.push(pcm);
-    if (spectral.features) {
-      this.#spectral = spectral;
-      if (spectral.label === 'music') this.#maybeStartAuditorLive('music');
-    }
     this.voice.push(pcm, startMs);
     const captureCfg = this.#store.get().capture;
     if (captureCfg.policy === 'auto' && this.#autoCaptureStartedAt !== null) {
