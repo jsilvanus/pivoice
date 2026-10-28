@@ -15,8 +15,8 @@ export const ROUTES = {
   'POST /api/v1/capture/start': 'startCapture',
   'POST /api/v1/capture/stop': 'stopCapture',
   'GET /api/v1/transcription/events': 'streamTranscriptionEvents',
-  'GET /api/v1/transcription/idle-close': 'getTranscriptionIdleClose',
-  'PUT /api/v1/transcription/idle-close': 'setTranscriptionIdleClose',
+  'GET /api/v1/activity/idle-close': 'getActivityIdleClose',
+  'PUT /api/v1/activity/idle-close': 'setActivityIdleClose',
   'GET /api/v1/radio': 'getRadio',
   'GET /api/v1/captions/status': 'getCaptionsStatus',
 };
@@ -50,12 +50,12 @@ export function createServer({ service, store, token = null, allowInsecure = fal
     },
     startCapture: () => ({ body: service.startCapture() }),
     stopCapture: () => ({ body: service.stopCapture() }),
-    getTranscriptionIdleClose: () => ({ body: { idleCloseSeconds: store.get().auditor.idleCloseSeconds } }),
-    setTranscriptionIdleClose: async ({ body }) => {
+    getActivityIdleClose: () => ({ body: { idleCloseSeconds: store.get().activity.idleCloseSeconds } }),
+    setActivityIdleClose: async ({ body }) => {
       if (!body || Object.keys(body).length !== 1 || !Object.hasOwn(body, 'idleCloseSeconds')) {
         throw new HttpError(400, 'invalid_request', 'Body must contain only idleCloseSeconds');
       }
-      const { previous, current } = await store.update({ auditor: { idleCloseSeconds: body.idleCloseSeconds } });
+      const { previous, current } = await store.update({ activity: { idleCloseSeconds: body.idleCloseSeconds } });
       service.applyConfig(previous, current);
       return { body: { idleCloseSeconds: current.auditor.idleCloseSeconds } };
     },
