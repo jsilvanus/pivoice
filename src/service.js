@@ -133,6 +133,7 @@ export class PiVoiceService {
   #stopCaptureNow() {
     this.radio.stop();
     this.capture.stop();
+    this.#spectral.reset();
     this.transcriber.clear();
     this.#liveAuditor?.stop();
     this.#autoCaptureStartedAt = null;
