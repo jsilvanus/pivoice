@@ -144,9 +144,9 @@ paths:
                 $ref: "#/components/schemas/Status"
         "401":
           $ref: "#/components/responses/Unauthorized"
-  /api/v1/transcription/idle-close:
+  /api/v1/activity/idle-close:
     get:
-      operationId: getTranscriptionIdleClose
+      operationId: getActivityIdleClose
       tags:
         - transcription
       summary: Read the live STT/MR idle-close timeout
@@ -166,7 +166,7 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
     put:
-      operationId: setTranscriptionIdleClose
+      operationId: setActivityIdleClose
       tags:
         - transcription
       summary: Set the live STT/MR idle-close timeout
@@ -485,6 +485,7 @@ components:
         - voice
         - radio
         - auditor
+        - activity
         - captions
       properties:
         capture:
@@ -562,11 +563,6 @@ components:
               type: string
               enum: [capture_start, speech, speech_or_music]
               description: "Start the pull session on capture start, on energy-gated speech activity, or on speech activity or a frame classified as music by the lightweight spectral heuristic."
-            idleCloseSeconds:
-              type: integer
-              minimum: 0
-              maximum: 3600
-              description: "Close a speech/music-triggered live Auditor session after this many seconds without matching activity; 0 disables automatic close. Reserved for shared future music-recognition session lifecycle too."
             language:
               type: string
               example: fi
@@ -640,6 +636,13 @@ components:
           type: object
         radio:
           type: object
+        activity:
+          type: object
+          properties:
+            idleCloseSeconds:
+              type: integer
+              minimum: 0
+              maximum: 3600
         auditor:
           type: object
         captions:
