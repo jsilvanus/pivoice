@@ -364,8 +364,8 @@ export class PiVoiceService {
     if (!['speech', 'music'].includes(trigger)) throw new ServiceError(400, 'invalid_trigger', 'trigger must be speech or music');
     const preRoll = this.#preroll.snapshotWithTiming();
     const status = await this.#liveAuditor.start({ preRollPcm: preRoll.pcm, preRollStartMs: preRoll.startMs });
-    this.#publish('activity-session', { state: 'running', trigger, preRollBytes: preRollPcm.length, ...status });
-    return { ...status, trigger, preRollBytes: preRollPcm.length };
+    this.#publish('activity-session', { state: 'running', trigger, preRollBytes: preRoll.pcm.length, ...status });
+    return { ...status, trigger, preRollBytes: preRoll.pcm.length };
   }
 
   async stopActivitySession(reason = 'idle') {
