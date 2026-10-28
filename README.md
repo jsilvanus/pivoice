@@ -8,7 +8,7 @@ Every consumer has a mode: `on`, `off` or `auto`. Web radio and transcription ca
 
 ## PiGateway telemetry
 
-When `PIVOICE_GATEWAY_HOST` is set, PiVoice sends a 42-byte binary UDP telemetry snapshot to that host every 100 ms. The port is `PIVOICE_GATEWAY_PORT` (default `3101`). Configure the host as the PiGateway LAN IP. This is telemetry only; audio continues to its consumers and is never sent to PiGateway. Snapshots continue when capture is stopped so packet receipt acts as the gateway heartbeat.
+When `PIVOICE_GATEWAY_HOST` is set, PiVoice sends a 42-byte binary UDP telemetry snapshot to that host while capture is running (every 100 ms), plus a packet when capture state changes. It sends no periodic packets while idle. A type `0x02` message is sent after the PiVoice status/health poll completes. The port is `PIVOICE_GATEWAY_PORT` (default `3101`). Configure the host as the PiGateway LAN IP. This is telemetry only; audio continues to its consumers and is never sent to PiGateway. PiGateway retains the last snapshot and marks it stale after six seconds without a valid packet.
 
 The [shared protocol specification](docs/pivoice-telemetry.md) is also recorded in PiGateway.
 
@@ -22,7 +22,7 @@ Header (20 bytes):
 |---:|---:|---|---|
 | 0 | 2 | Magic | ASCII `PV` |
 | 2 | 1 | Version | `1` |
-| 3 | 1 | Type | `0x01`, telemetry snapshot |
+| 3 | 1 | Type | `0x01` snapshot; `0x02` poll completed |
 | 4 | 2 | Flags | Reserved, zero |
 | 6 | 2 | Payload length | `22` |
 | 8 | 4 | Sequence | Unsigned 32-bit counter, wraps |
