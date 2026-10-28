@@ -23,7 +23,7 @@ export class AuditorLiveClient extends EventEmitter {
   get running() { return this.#sessionId !== null && !this.#stopping; }
   status() { return { configured: Boolean(this.#baseUrl && this.#source), running: this.running, sessionId: this.#sessionId }; }
 
-  async start({ preRollPcm = null } = {}) {
+  async start({ preRollPcm = null, preRollStartMs = null } = {}) {
     if (this.running) return this.status();
     if (!this.#baseUrl || !this.#source) throw new Error('Auditor live source URL is not configured');
     this.#stopping = false;
@@ -31,7 +31,11 @@ export class AuditorLiveClient extends EventEmitter {
     let request;
     if (Buffer.isBuffer(preRollPcm) && preRollPcm.length > 0) {
       const form = new FormData();
-      form.set('metadata', JSON.stringify({ ...metadata, has_preroll: true }));
+      form.set('metadata', JSON.stringify({
+        ...metadata,
+        has_preroll: true,
+        ...(Number.isFinite(preRollStartMs) ? { preroll_start_ms: preRollStartMs } : {}),
+      }));
       form.set('preroll', new Blob([preRollPcm], { type: 'application/octet-stream' }), 'preroll.pcm');
       request = { method: 'POST', headers: this.#headers(), body: form };
     } else {
