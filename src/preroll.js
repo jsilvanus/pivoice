@@ -4,6 +4,7 @@ export class PcmRingBuffer {
   #maxBytes;
   #parts = [];
   #bytes = 0;
+  #startMs = null;
 
   constructor({ seconds = 5, maxSeconds = 30 } = {}) {
     if (!Number.isFinite(seconds) || seconds < 0 || seconds > maxSeconds) {
@@ -13,6 +14,7 @@ export class PcmRingBuffer {
   }
 
   get durationMs() { return this.#bytes / 32; }
+  get startMs() { return this.#startMs; }
 
   configureSeconds(seconds, maxSeconds = 30) {
     if (!Number.isFinite(seconds) || seconds < 0 || seconds > maxSeconds) {
@@ -22,8 +24,9 @@ export class PcmRingBuffer {
     this.#trim();
   }
 
-  push(pcm) {
+  push(pcm, startMs = null) {
     if (!Buffer.isBuffer(pcm) || pcm.length === 0 || this.#maxBytes === 0) return;
+    if (this.#bytes === 0) this.#startMs = Number.isFinite(startMs) ? startMs : null;
     // Copy input: capture owns/reuses its chunks independently.
     const copy = Buffer.from(pcm);
     this.#parts.push(copy);
@@ -35,9 +38,14 @@ export class PcmRingBuffer {
     return Buffer.concat(this.#parts, this.#bytes);
   }
 
+  snapshotWithTiming() {
+    return { pcm: this.snapshot(), startMs: this.#startMs, durationMs: this.durationMs };
+  }
+
   clear() {
     this.#parts = [];
     this.#bytes = 0;
+    this.#startMs = null;
   }
 
   #trim() {
@@ -47,10 +55,12 @@ export class PcmRingBuffer {
       if (first.length <= excess) {
         this.#parts.shift();
         this.#bytes -= first.length;
+        if (this.#bytes > 0 && this.#startMs !== null) this.#startMs += first.length / 32;
       } else {
         // Copy the retained suffix so a small view cannot keep the whole old chunk alive.
         this.#parts[0] = Buffer.from(first.subarray(excess));
         this.#bytes -= excess;
+        if (this.#startMs !== null) this.#startMs += excess / 32;
       }
     }
   }
