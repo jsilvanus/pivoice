@@ -10,6 +10,8 @@ export class AuditorLiveClient extends EventEmitter {
   #sessionId = null;
   #controller = null;
   #stopping = false;
+  #generation = 0;
+  #startPromise = null;
 
   constructor({ url, apiKey, source, language = 'fi', fetchFn = globalThis.fetch }) {
     super();
@@ -23,10 +25,22 @@ export class AuditorLiveClient extends EventEmitter {
   get running() { return this.#sessionId !== null && !this.#stopping; }
   status() { return { configured: Boolean(this.#baseUrl && this.#source), running: this.running, sessionId: this.#sessionId }; }
 
-  async start({ preRollPcm = null, preRollStartMs = null } = {}) {
+  async start(options = {}) {
     if (this.running) return this.status();
-    if (!this.#baseUrl || !this.#source) throw new Error('Auditor live source URL is not configured');
+    if (this.#startPromise) return this.#startPromise;
+    const generation = ++this.#generation;
     this.#stopping = false;
+    const pending = this.#startSession(options, generation);
+    this.#startPromise = pending;
+    try {
+      return await pending;
+    } finally {
+      if (this.#startPromise === pending) this.#startPromise = null;
+    }
+  }
+
+  async #startSession({ preRollPcm = null, preRollStartMs = null } = {}, generation) {
+    if (!this.#baseUrl || !this.#source) throw new Error('Auditor live source URL is not configured');
     const metadata = { source: this.#source, language: this.#language, client_ref: 'pivoice-main' };
     let request;
     if (Buffer.isBuffer(preRollPcm) && preRollPcm.length > 0) {
@@ -50,6 +64,14 @@ export class AuditorLiveClient extends EventEmitter {
     const body = await response.json();
     const id = body.id ?? body.session_id ?? body.session?.id;
     if (typeof id !== 'string' || !id) throw new Error('Auditor live start response did not contain a session id');
+    // stop() can race the HTTP start response. If the request created a session
+    // after stop was requested, delete it rather than leaving an orphan behind.
+    if (generation !== this.#generation || this.#stopping) {
+      await this.#fetch(`${this.#baseUrl}/v1/live/${encodeURIComponent(id)}`, {
+        method: 'DELETE', headers: this.#headers(),
+      }).catch(() => {});
+      return this.status();
+    }
     this.#sessionId = id;
     this.#controller = new AbortController();
     void this.#readEvents(id, this.#controller.signal).catch((err) => {
@@ -60,9 +82,14 @@ export class AuditorLiveClient extends EventEmitter {
   }
 
   async stop() {
-    const id = this.#sessionId;
-    if (!id) return this.status();
     this.#stopping = true;
+    this.#generation++;
+    const id = this.#sessionId;
+    if (!id) {
+      if (this.#startPromise) await this.#startPromise.catch(() => undefined);
+      this.emit('status', this.status());
+      return this.status();
+    }
     this.#controller?.abort();
     this.#controller = null;
     this.#sessionId = null;
