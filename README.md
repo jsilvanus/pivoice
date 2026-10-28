@@ -4,7 +4,7 @@ Headless audio service for the PiMatrix Raspberry Pi. One Hama USB microphone is
 
 ## Modes
 
-Capture has a policy separate from its input backend: `capture.policy=on` captures continuously, `off` remains stopped, and `auto` runs short scheduled ALSA probes (`autoPollSeconds`, `autoProbeSeconds`) and starts full capture when probe level crosses `voice.thresholdDb`. Auto capture stops after `autoQuietSeconds` without sound and returns to scheduled probes. `capture.mode` remains the backend (`alsa` or `simulated`). Every consumer has its own `on`, `off` or `auto` mode. Voice detection is currently an energy gate (`voice.thresholdDb`, `voice.hangoverSeconds`, `voice.prerollSeconds`).
+Capture has a policy separate from its input backend: `capture.policy=on` captures continuously, `off` remains stopped, and `auto` runs short ALSA probes (`autoPollMode=continuous` probes again immediately; `scheduled` waits `autoPollSeconds`; `autoProbeSeconds` sets probe length) and starts full capture when probe level crosses `voice.thresholdDb`. Auto capture stops after `autoQuietSeconds` without sound and returns to scheduled probes. `capture.mode` remains the backend (`alsa` or `simulated`). Every consumer has its own `on`, `off` or `auto` mode. Voice detection is currently an energy gate (`voice.thresholdDb`, `voice.hangoverSeconds`, `voice.prerollSeconds`).
 
 ## Auditor pull mode
 
