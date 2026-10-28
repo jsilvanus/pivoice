@@ -300,6 +300,25 @@ components:
               type:
                 - string
                 - "null"
+        spectral:
+          type: object
+          description: Current heuristic PCM spectral classification; not a trained model or calibrated confidence.
+          properties:
+            label:
+              type: string
+              enum: [unknown, silence, speech, music]
+            confidence:
+              type:
+                - number
+                - "null"
+            at:
+              type:
+                - number
+                - "null"
+            features:
+              type:
+                - object
+                - "null"
         auditorLive:
           type: object
           properties:
@@ -469,7 +488,7 @@ components:
             startWhen:
               type: string
               enum: [capture_start, speech, speech_or_music]
-              description: "Start the pull session on capture start, on energy-gated sound, or on energy-gated sound (including music). The current gate is energy-based, not a semantic speech/music classifier."
+              description: "Start the pull session on capture start, on energy-gated speech activity, or on speech activity or a frame classified as music by the lightweight spectral heuristic."
             language:
               type: string
               example: fi
