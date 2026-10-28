@@ -445,6 +445,16 @@ components:
                 - string
                 - "null"
               description: Secret
+            liveSourceUrl:
+              type:
+                - string
+                - "null"
+              format: uri
+              description: "Optional rtsp/rtsps/srt source that liturgos-auditor pulls itself from MediaMTX. When set, PiVoice starts a live session instead of uploading chunks."
+            startWhen:
+              type: string
+              enum: [capture_start, speech, speech_or_music]
+              description: "Start the pull session on capture start, on energy-gated sound, or on energy-gated sound (including music). The current gate is energy-based, not a semantic speech/music classifier."
             language:
               type: string
               example: fi
