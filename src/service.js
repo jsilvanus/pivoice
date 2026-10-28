@@ -6,6 +6,7 @@ import { RelayCaptions } from './captions/relay.js';
 import { StreamOnlineWatcher } from './captions/stream-status.js';
 import { YouTubeCaptions } from './captions/youtube.js';
 import { Chunker } from './pcm.js';
+import { PcmRingBuffer } from './preroll.js';
 import { RadioOutputs } from './radio.js';
 import { Transcriber } from './transcriber.js';
 import { VoiceGate } from './vad.js';
@@ -33,6 +34,7 @@ export class PiVoiceService {
   #hub = new EventEmitter();
   #startedAt;
   #chunker;
+  #preroll;
   #fetchFn;
   #createSender;
   #execFile;
@@ -70,6 +72,7 @@ export class PiVoiceService {
     this.radio = new RadioOutputs({ spawn, now, minRestartMs, maxRestartMs });
     this.transcriber = new Transcriber({ now, staleMs });
     this.#chunker = new Chunker({ chunkMs: cfg.capture.chunkSeconds * 1000 });
+    this.#preroll = new PcmRingBuffer({ seconds: cfg.activity.prerollSeconds });
 
     this.radio.configure({ targets: cfg.radio.targets, bitrate: cfg.radio.bitrate, sampleRate: cfg.capture.sampleRate, channels: cfg.capture.channels });
     this.#buildVoice(cfg);
@@ -239,7 +242,7 @@ export class PiVoiceService {
     if (changed('voice')) this.#buildVoice(next);
     if (changed('radio') || changed('capture')) this.radio.configure({ targets: next.radio.targets, bitrate: next.radio.bitrate, sampleRate: next.capture.sampleRate, channels: next.capture.channels });
     if (changed('auditor')) this.#applyAuditor(next);
-    if (changed('activity')) this.#scheduleAuditorIdleClose();
+    if (changed('activity')) this.#preroll.configureSeconds(next.activity.prerollSeconds);
     if (changed('captions')) this.#buildCaptions(next);
   }
 
@@ -346,26 +349,30 @@ export class PiVoiceService {
   }
 
   #activityDetected(trigger) {
-    clearTimeout(this.#auditorIdleTimer);
-    this.#auditorIdleTimer = null;
-    this.#maybeStartAuditorLive(trigger);
+    // PiGateway owns session lifecycle. PiVoice only reports activity and retains PCM.
+    this.#publish('activity', { trigger, at: new Date(this.#now()).toISOString() });
+  }
+
+  async startActivitySession(trigger = 'speech') {
+    const cfg = this.#store.get().auditor;
+    if (!this.capture.running) throw new ServiceError(409, 'capture_not_running', 'Capture must be running before an activity session can start');
+    if (!this.#liveAuditor || cfg.mode === 'off') throw new ServiceError(409, 'auditor_not_configured', 'Auditor live mode is not configured or is disabled');
+    if (!['speech', 'music'].includes(trigger)) throw new ServiceError(400, 'invalid_trigger', 'trigger must be speech or music');
+    const preRollPcm = this.#preroll.snapshot();
+    const status = await this.#liveAuditor.start({ preRollPcm });
+    this.#publish('activity-session', { state: 'running', trigger, preRollBytes: preRollPcm.length, ...status });
+    return { ...status, trigger, preRollBytes: preRollPcm.length };
+  }
+
+  async stopActivitySession(reason = 'idle') {
+    if (!this.#liveAuditor) return { configured: false, running: false, sessionId: null };
+    const status = await this.#liveAuditor.stop();
+    this.#publish('activity-session', { state: 'stopped', reason, ...status });
+    return status;
   }
 
   #scheduleAuditorIdleClose() {
-    clearTimeout(this.#auditorIdleTimer);
-    this.#auditorIdleTimer = null;
-    const cfg = this.#store.get().auditor;
-    if (!this.#liveAuditor?.running || this.#store.get().activity.idleCloseSeconds <= 0 || cfg.startWhen === 'capture_start') return;
-    const activity = cfg.startWhen === 'speech' ? this.#speechActive : (this.#speechActive || this.#musicActive);
-    if (activity) return;
-    this.#auditorIdleTimer = setTimeout(() => {
-      this.#auditorIdleTimer = null;
-      const current = this.#store.get().auditor;
-      const stillActive = current.startWhen === 'speech' ? this.#speechActive : (this.#speechActive || this.#musicActive);
-      if (stillActive || !this.#liveAuditor?.running || this.#store.get().activity.idleCloseSeconds <= 0) return;
-      this.#liveAuditor.stop().catch((err) => this.#publish('auditor-live', { type: 'error', message: err.message }));
-    }, this.#store.get().activity.idleCloseSeconds * 1000);
-    this.#auditorIdleTimer.unref?.();
+    // Intentionally no local timer: PiGateway is the authoritative lifecycle owner.
   }
 
   #maybeStartAuditorLive(trigger) {
@@ -379,7 +386,7 @@ export class PiVoiceService {
     if (shouldStart) {
       clearTimeout(this.#auditorIdleTimer);
       this.#auditorIdleTimer = null;
-      this.#liveAuditor.start().catch((err) => {
+      this.#liveAuditor.start({ preRollPcm: this.#preroll.snapshot() }).catch((err) => {
         this.#publish('auditor-live', { type: 'error', message: err.message });
       });
     }
@@ -439,6 +446,7 @@ export class PiVoiceService {
 
   #onPcm(pcm, startMs) {
     this.#meter = measurePcm(pcm, this.#now());
+    this.#preroll.push(pcm);
     const endMs = startMs + pcm.length / 32;
     this.#spectral.push(pcm, endMs);
     this.#silero.push(pcm, endMs);
