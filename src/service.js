@@ -276,7 +276,23 @@ export class PiVoiceService {
   }
 
   #applyAuditor(cfg) {
-    const auditor = cfg.auditor.url
+    this.#liveAuditor?.stop();
+    this.#liveAuditor = cfg.auditor.url && cfg.auditor.liveSourceUrl
+      ? new AuditorLiveClient({
+          url: cfg.auditor.url,
+          apiKey: cfg.auditor.apiKey,
+          source: cfg.auditor.liveSourceUrl,
+          language: cfg.auditor.language,
+          fetchFn: this.#fetchFn,
+        })
+      : null;
+    if (this.#liveAuditor) {
+      this.#liveAuditor.on('transcript', (event) => this.#onTranscript(event));
+      this.#liveAuditor.on('live-event', (event) => this.#publish('auditor-live', event));
+      this.#liveAuditor.on('live-error', (err) => this.#publish('auditor-live', { type: 'error', message: err.message }));
+      this.#liveAuditor.on('status', (status) => this.#publish('auditor-live', { type: 'status', data: status }));
+    }
+    const auditor = cfg.auditor.url && !cfg.auditor.liveSourceUrl
       ? new AuditorClient({
           url: cfg.auditor.url,
           apiKey: cfg.auditor.apiKey,
@@ -285,6 +301,20 @@ export class PiVoiceService {
         })
       : null;
     this.transcriber.configure({ auditor, language: cfg.auditor.language, maxQueue: cfg.auditor.maxQueue });
+    if (this.capture.running) this.#maybeStartAuditorLive('capture_start');
+  }
+
+  #maybeStartAuditorLive(trigger) {
+    const cfg = this.#store.get().auditor;
+    if (!this.#liveAuditor || cfg.mode === 'off' || this.#liveAuditor.running) return;
+    const shouldStart = cfg.startWhen === 'capture_start'
+      ? trigger === 'capture_start'
+      : trigger === 'speech';
+    if (shouldStart) {
+      this.#liveAuditor.start().catch((err) => {
+        this.#publish('auditor-live', { type: 'error', message: err.message });
+      });
+    }
   }
 
   #buildCaptions(cfg) {
