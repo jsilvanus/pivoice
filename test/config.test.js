@@ -11,6 +11,8 @@ test('defaults are valid and closed (no targets, captions off, no secrets)', () 
   const cfg = base();
   assert.equal(cfg.capture.mode, 'alsa');
   assert.equal(cfg.capture.device, 'default');
+  assert.equal(cfg.capture.policy, 'on');
+  assert.equal(cfg.capture.autoPollSeconds, 120);
   assert.equal(cfg.captions.youtube.mode, 'off');
   assert.equal(cfg.radio.targets.length, 0);
   assert.equal(cfg.auditor.apiKey, null);
