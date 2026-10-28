@@ -1,6 +1,7 @@
 import { execFile as nodeExecFile, spawn as nodeSpawn } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import { BYTES_PER_MS, CHANNELS, SAMPLE_RATE } from './pcm.js';
+import { rms } from './vad.js';
 
 /** A restart counts as healthy (and resets the backoff) after this long. */
 const STABLE_AFTER_MS = 30_000;
@@ -162,6 +163,33 @@ export class CaptureSupervisor extends EventEmitter {
     this.#state = state;
     this.emit('state', this.status());
   }
+}
+
+
+/** Capture a short 16 kHz mono probe and return its RMS level in dBFS. */
+export function probeAudio({ device, channels, sampleRate, durationSeconds = 1, spawn = nodeSpawn }) {
+  return new Promise((resolve, reject) => {
+    const args = [
+      '-hide_banner', '-loglevel', 'error', '-nostdin',
+      '-f', 'alsa', '-channels', String(channels), '-sample_rate', String(sampleRate), '-i', device,
+      '-t', String(durationSeconds), '-ac', String(CHANNELS), '-ar', String(SAMPLE_RATE), '-f', 's16le', 'pipe:1',
+    ];
+    const child = spawn('ffmpeg', args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    const chunks = [];
+    let stderr = '';
+    child.stdout.on('data', (buf) => chunks.push(buf));
+    child.stderr?.on('data', (buf) => { stderr = buf.toString().slice(-300); });
+    child.once('error', (err) => reject(new Error(err.code === 'ENOENT' ? 'ffmpeg is not installed' : err.message)));
+    child.once('exit', (code, signal) => {
+      if (code !== 0) {
+        reject(new Error(`audio probe failed (${code ?? signal})${stderr ? `: ${stderr}` : ''}`));
+        return;
+      }
+      const pcm = Buffer.concat(chunks);
+      const level = rms(pcm);
+      resolve(level > 0 ? 20 * Math.log10(level / 32768) : -Infinity);
+    });
+  });
 }
 
 /** Parses `arecord -l` output into capture devices. */
