@@ -35,6 +35,7 @@ export class SileroVad extends EventEmitter {
   get status() { return structuredClone(this.#status); }
   get ready() { return this.#ready; }
   get speaking() { return this.#speaking; }
+  get lastSpeechAt() { return Number.isFinite(this.#lastSpeechAt) ? this.#lastSpeechAt : null; }
 
   async initialize() {
     try {
