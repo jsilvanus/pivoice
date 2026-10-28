@@ -169,6 +169,7 @@ test('activity session sends timed pre-roll and reports its byte count', async (
     },
     activity: { prerollSeconds: 2 },
   });
+  const spawn = fakeSpawn();
   const calls = [];
   const fetchFn = async (url, init = {}) => {
     calls.push({ url, init });
@@ -180,16 +181,18 @@ test('activity session sends timed pre-roll and reports its byte count', async (
     }
     return jsonResponse({});
   };
-  const service = new PiVoiceService({ store, spawn: fakeSpawn(), fetchFn, now: () => NOW });
+  const service = new PiVoiceService({ store, spawn, fetchFn, now: () => NOW });
   service.startCapture();
-  const capture = service.capture;
-  // Feed one second of normalized mono S16LE into the real service wiring.
-  service['test-only'] = undefined;
-  const captureProcess = service.status();
-  assert.equal(captureProcess.capture.running, true);
-  // The fake FFmpeg child is the first spawned child; the test harness exposes it through fakeSpawn.
-  const spawned = service.__unused;
-  void capture;
-  void spawned;
+  spawn.children[0].stdout.write(Buffer.alloc(32_000));
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  const status = await service.startActivitySession('speech');
+  assert.equal(status.preRollBytes, 32_000);
+  const request = calls.find((call) => call.url.endsWith('/v1/live'));
+  assert.ok(request);
+  assert.equal(request.init.body.get('preroll').size, 32_000);
+  const metadata = JSON.parse(request.init.body.get('metadata'));
+  assert.equal(metadata.has_preroll, true);
+  assert.equal(metadata.preroll_start_ms, NOW);
   service.stop();
 });
