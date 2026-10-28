@@ -100,6 +100,17 @@ export const commands = [
     "auth": "bearer"
   },
   {
+    "operationId": "startActivitySession",
+    "command": "start-activity-session",
+    "method": "POST",
+    "path": "/api/v1/activity/session/start",
+    "summary": "Open an activity-triggered live Auditor session with the current rolling PCM pre-roll",
+    "pathParams": [],
+    "hasBody": true,
+    "streams": false,
+    "auth": "bearer"
+  },
+  {
     "operationId": "startCapture",
     "command": "start-capture",
     "method": "POST",
@@ -107,6 +118,17 @@ export const commands = [
     "summary": "Start the shared capture and the radio encoders (idempotent)",
     "pathParams": [],
     "hasBody": false,
+    "streams": false,
+    "auth": "bearer"
+  },
+  {
+    "operationId": "stopActivitySession",
+    "command": "stop-activity-session",
+    "method": "POST",
+    "path": "/api/v1/activity/session/stop",
+    "summary": "Close the activity-triggered live Auditor session",
+    "pathParams": [],
+    "hasBody": true,
     "streams": false,
     "auth": "bearer"
   },
