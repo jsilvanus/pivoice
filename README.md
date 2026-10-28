@@ -51,7 +51,7 @@ Telemetry classification now uses the spectral heuristic while capture is runnin
 
 ## Timing and sync
 
-Capture stamps every PCM buffer with its wall-clock start (epoch ms, NTP-synced Pi clock). Chunks, transcript segments and captions carry those epoch times. web-radio-relay holds audio back by its listener delay and releases each caption at `startedAt + delay`. YouTube captions use `captions.youtube.delayMs`.
+The ALSA input is timestamped against the Pi's wall clock by FFmpeg (`-use_wallclock_as_timestamps 1`). The raw PCM output pipes do not preserve packet PTS, so PiVoice maps each output branch onto a sample-count timeline anchored when the first PCM buffer arrives after capture starts; subsequent buffer times advance by their exact sample duration. This avoids anchoring the timeline to FFmpeg process launch, but the initial timestamp still includes capture/FFmpeg output latency rather than a hardware ALSA timestamp. Keep the Pi clock NTP-synchronised. Chunks, transcript segments and captions carry epoch-millisecond times. web-radio-relay holds audio back by its listener delay and releases each caption at `startedAt + delay`. YouTube captions use `captions.youtube.delayMs`.
 
 ## Configuration
 
