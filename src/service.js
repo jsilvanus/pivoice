@@ -291,6 +291,7 @@ export class PiVoiceService {
     this.voice = new VoiceGate(cfg.voice);
     this.voice.on('open', ({ preroll }) => {
       this.radio.setVoice(true, preroll);
+      if (!this.#silero?.ready) this.#maybeStartAuditorLive('speech');
     });
     this.voice.on('close', () => this.radio.setVoice(false));
     this.radio.setVoice(false);
@@ -420,7 +421,8 @@ export class PiVoiceService {
   // Captions are only produced from speech, so "on" and "auto" differ only for chunks of silence.
   #transcriptionWanted(atMs) {
     const mode = this.#store.get().auditor.mode;
-    const speechActive = this.#silero.ready ? this.#silero.speaking : this.voice.lastVoiceMs >= atMs;
+    const lastSpeechMs = this.#silero.ready ? this.#silero.lastSpeechAt : this.voice.lastVoiceMs;
+    const speechActive = Number.isFinite(lastSpeechMs) && lastSpeechMs >= atMs;
     return mode === 'on' || (mode === 'auto' && speechActive);
   }
 
