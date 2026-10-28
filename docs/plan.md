@@ -247,3 +247,12 @@ The original architecture sketch above predates the activity-session integration
 **Implemented in code:** PiVoice's `src/auditor-live.js` sends multipart pre-roll when a non-empty buffer is supplied and retains JSON compatibility for no-pre-roll starts; the pre-roll buffer and activity-session controls are implemented. OpenAPI documents the service API.
 
 **Remaining verification:** run current PiVoice tests and OpenAPI consistency checks; verify buffer continuity and exact pre-roll/live ordering, bounded-buffer overflow behavior, repeated activity and idle-close races across PiGateway/PiVoice, Auditor disconnect/reconnect, and caption/radio failure isolation. Test on the actual Pi and church audio before deployment. The current architecture diagram above should be treated as a historical overview until it is fully reconciled with this section.
+
+
+## Implementation update (2026-10-28)
+
+- Fixed activity-session response accounting to report bytes from the captured pre-roll snapshot.
+- Reset the rolling pre-roll buffer, analysis chunker and activity detectors when FFmpeg capture enters restart backoff, so audio from separate capture timelines is not joined.
+- Auditor SSE consumption now reconnects with bounded exponential backoff and resumes from the last fully dispatched event ID. The replay cursor advances only after an event has been consumed.
+- Added a focused service test for multipart pre-roll metadata and byte-count reporting.
+- Verification has deliberately not been run; hand this repository to the verification agent for tests, OpenAPI consistency and end-to-end integration checks.
