@@ -311,7 +311,7 @@ export class PiVoiceService {
     this.voice = new VoiceGate(cfg.voice);
     this.voice.on('open', ({ preroll }) => {
       this.radio.setVoice(true, preroll);
-      if (!this.#silero?.ready) this.#maybeStartAuditorLive('speech');
+      // PiGateway, not the local VAD callback, opens activity-triggered sessions.
     });
     this.voice.on('close', () => this.radio.setVoice(false));
     this.radio.setVoice(false);
@@ -378,11 +378,7 @@ export class PiVoiceService {
   #maybeStartAuditorLive(trigger) {
     const cfg = this.#store.get().auditor;
     if (!this.#liveAuditor || cfg.mode === 'off' || this.#liveAuditor.running) return;
-    const shouldStart = cfg.startWhen === 'capture_start'
-      ? trigger === 'capture_start'
-      : cfg.startWhen === 'speech'
-        ? trigger === 'speech'
-        : trigger === 'speech' || trigger === 'music';
+    const shouldStart = cfg.startWhen === 'capture_start' && trigger === 'capture_start';
     if (shouldStart) {
       clearTimeout(this.#auditorIdleTimer);
       this.#auditorIdleTimer = null;
