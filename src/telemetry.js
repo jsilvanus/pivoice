@@ -52,6 +52,7 @@ export class PiVoiceTelemetryPublisher {
   #socket;
   #timer = null;
   #sequence = 0;
+  #closed = false;
 
   constructor({ host, port = PIVOICE_UDP_PORT, snapshot, now = Date.now, socketFactory = () => dgram.createSocket('udp4') }) {
     if (!host) throw new Error('PiVoice telemetry host is required');
@@ -64,7 +65,7 @@ export class PiVoiceTelemetryPublisher {
   }
 
   start() {
-    if (this.#timer) return;
+    if (this.#timer || this.#closed) return;
     const send = () => {
       let packet;
       try {
@@ -80,8 +81,10 @@ export class PiVoiceTelemetryPublisher {
   }
 
   stop() {
+    if (this.#closed) return;
     if (this.#timer) clearInterval(this.#timer);
     this.#timer = null;
+    this.#closed = true;
     this.#socket.close();
   }
 }
