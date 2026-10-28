@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { mkdir, writeFile, rename, unlink } from 'node:fs/promises';
 import path from 'node:path';
 
-export const SILERO_MODEL_URL = 'https://huggingface.co/skillsafe-ai/silero-vad/resolve/60b7ffa243625ebdc1070275a29f18c87843786a/silero_vad.onnx';
+export const SILERO_MODEL_URL = 'https://github.com/snakers4/silero-vad/raw/60b7ffa243625ebdc1070275a29f18c87843786a/src/silero_vad/data/silero_vad.onnx';
 export const SILERO_MODEL_SHA256 = '1a153a22f4509e292a94e67d6f9b85e8deb25b4988682b7e174c65279d8788e3';
 
 const MODEL_PATH = process.env.PIVOICE_SILERO_MODEL_PATH || path.resolve('models/silero_vad.onnx');
