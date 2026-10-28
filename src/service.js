@@ -362,8 +362,8 @@ export class PiVoiceService {
     if (cfg.startWhen === 'capture_start') throw new ServiceError(409, 'capture_start_mode', 'Auditor is configured to start with capture, not on activity');
     if (cfg.startWhen === 'speech' && trigger !== 'speech') throw new ServiceError(409, 'trigger_not_enabled', 'Auditor is configured to start on speech only');
     if (!['speech', 'music'].includes(trigger)) throw new ServiceError(400, 'invalid_trigger', 'trigger must be speech or music');
-    const preRollPcm = this.#preroll.snapshot();
-    const status = await this.#liveAuditor.start({ preRollPcm });
+    const preRoll = this.#preroll.snapshotWithTiming();
+    const status = await this.#liveAuditor.start({ preRollPcm: preRoll.pcm, preRollStartMs: preRoll.startMs });
     this.#publish('activity-session', { state: 'running', trigger, preRollBytes: preRollPcm.length, ...status });
     return { ...status, trigger, preRollBytes: preRollPcm.length };
   }
@@ -386,7 +386,8 @@ export class PiVoiceService {
     if (shouldStart) {
       clearTimeout(this.#auditorIdleTimer);
       this.#auditorIdleTimer = null;
-      this.#liveAuditor.start({ preRollPcm: this.#preroll.snapshot() }).catch((err) => {
+      const preRoll = this.#preroll.snapshotWithTiming();
+      this.#liveAuditor.start({ preRollPcm: preRoll.pcm, preRollStartMs: preRoll.startMs }).catch((err) => {
         this.#publish('auditor-live', { type: 'error', message: err.message });
       });
     }
@@ -446,7 +447,7 @@ export class PiVoiceService {
 
   #onPcm(pcm, startMs) {
     this.#meter = measurePcm(pcm, this.#now());
-    this.#preroll.push(pcm);
+    this.#preroll.push(pcm, startMs);
     const endMs = startMs + pcm.length / 32;
     this.#spectral.push(pcm, endMs);
     this.#silero.push(pcm, endMs);
