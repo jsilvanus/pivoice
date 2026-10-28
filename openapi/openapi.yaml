@@ -158,12 +158,16 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [idleCloseSeconds]
+                required: [idleCloseSeconds, prerollSeconds]
                 properties:
                   idleCloseSeconds:
                     type: integer
                     minimum: 0
                     maximum: 3600
+                  prerollSeconds:
+                    type: integer
+                    minimum: 0
+                    maximum: 30
         "401":
           $ref: "#/components/responses/Unauthorized"
     put:
@@ -184,7 +188,7 @@ paths:
                   type: integer
                   minimum: 0
                   maximum: 3600
-                  description: Seconds without speech/music activity before closing the live session; 0 disables automatic close.
+                  description: Seconds without speech/music activity before PiGateway closes the live session; 0 disables automatic close.
       responses:
         "200":
           description: Updated timeout
@@ -200,6 +204,59 @@ paths:
                     maximum: 3600
         "400":
           $ref: "#/components/responses/Unauthorized"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /api/v1/activity/session/start:
+    post:
+      operationId: startActivitySession
+      tags: [activity]
+      summary: Open an activity-triggered live Auditor session with the current rolling PCM pre-roll
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                trigger:
+                  type: string
+                  enum: [speech, music]
+                  default: speech
+      responses:
+        "200":
+          description: Session started with pre-roll submitted before the live source is processed
+          content:
+            application/json:
+              schema:
+                type: object
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          description: Capture or Auditor live mode is unavailable
+  /api/v1/activity/session/stop:
+    post:
+      operationId: stopActivitySession
+      tags: [activity]
+      summary: Close the activity-triggered live Auditor session
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                reason:
+                  type: string
+                  default: gateway
+      responses:
+        "200":
+          description: Session stopped
+          content:
+            application/json:
+              schema:
+                type: object
         "401":
           $ref: "#/components/responses/Unauthorized"
   /api/v1/transcription/events:
