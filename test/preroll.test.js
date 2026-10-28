@@ -25,3 +25,14 @@ test('supports disabled history and resizing without exceeding the bound', () =>
   buffer.clear();
   assert.equal(buffer.durationMs, 0);
 });
+
+
+test('tracks the capture-time start while old PCM is trimmed', () => {
+  const buffer = new PcmRingBuffer({ seconds: 1 });
+  buffer.push(Buffer.alloc(20_000), 10_000);
+  buffer.push(Buffer.alloc(20_000), 10_625);
+  const snapshot = buffer.snapshotWithTiming();
+  assert.equal(snapshot.pcm.length, 32_000);
+  assert.equal(snapshot.startMs, 10_250);
+  assert.equal(snapshot.durationMs, 1000);
+});
