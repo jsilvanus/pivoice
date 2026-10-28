@@ -17,7 +17,7 @@ test('defaults are valid and closed (no targets, captions off, no secrets)', () 
   assert.equal(cfg.captions.youtube.mode, 'off');
   assert.equal(cfg.radio.targets.length, 0);
   assert.equal(cfg.auditor.apiKey, null);
-  assert.equal(cfg.auditor.startWhen, 'speech_or_music');
+  assert.equal(cfg.auditor.startWhen, 'capture_start');
   assert.equal(cfg.activity.idleCloseSeconds, 15);
   assert.equal(cfg.auditor.liveSourceUrl, null);
 });
@@ -65,7 +65,7 @@ test('store persists atomically with mode 0600 and reloads', async () => {
   assert.equal(previous.captions.youtube.mode, 'off');
   assert.equal(current.captions.youtube.streamKey, 'k1');
   const file = path.join(dir, 'config.json');
-  assert.equal((await stat(file)).mode & 0o777, 0o600);
+  if (process.platform !== 'win32') { assert.equal((await stat(file)).mode & 0o777, 0o600); }
   const saved = JSON.parse(await readFile(file, 'utf8'));
   assert.equal(saved.captions.youtube.streamKey, 'k1');
 });

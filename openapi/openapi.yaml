@@ -229,6 +229,9 @@ paths:
                   type: string
                   enum: [speech, music]
                   default: speech
+                delivery:
+                  type: object
+                  description: Optional transcript delivery config forwarded to Auditor
       responses:
         "200":
           description: Session started with pre-roll submitted before the live source is processed

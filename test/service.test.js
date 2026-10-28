@@ -158,6 +158,40 @@ test('Auditor pull mode starts on capture start and consumes Auditor-owned RTSP 
 });
 
 
+
+test('activity session forwards delivery options to Auditor', async () => {
+  const { store } = await tempStore({
+    capture: { mode: 'alsa', device: 'hw:1,0', chunkSeconds: 1 },
+    auditor: {
+      url: 'http://auditor:8090',
+      liveSourceUrl: 'rtsp://mediamtx:8554/church',
+      startWhen: 'speech',
+      mode: 'on',
+    },
+  });
+  const spawn = fakeSpawn();
+  const calls = [];
+  const fetchFn = async (url, init = {}) => {
+    calls.push({ url, init });
+    if (url.endsWith('/v1/live')) return jsonResponse({ id: 'activity-session-2' }, 202);
+    if (url.endsWith('/events')) {
+      return new Response(new ReadableStream({ start() {} }), {
+        headers: { 'content-type': 'text/event-stream' },
+      });
+    }
+    return jsonResponse({});
+  };
+  const service = new PiVoiceService({ store, spawn, fetchFn, now: () => NOW });
+  service.startCapture();
+  const delivery = { mode: 'push', url: 'https://gateway:3100/api/v1/transcripts', token: 'tok' };
+  const status = await service.startActivitySession('speech', delivery);
+  assert.equal(status.sessionId, 'activity-session-2');
+  const request = calls.find((call) => call.url.endsWith('/v1/live'));
+  const metadata = typeof request.init.body === 'string' ? JSON.parse(request.init.body) : JSON.parse(request.init.body.get('metadata'));
+  assert.deepEqual(metadata.delivery, delivery);
+  service.stop();
+});
+
 test('activity session sends timed pre-roll and reports its byte count', async () => {
   const { store } = await tempStore({
     capture: { mode: 'alsa', device: 'hw:1,0', chunkSeconds: 1 },

@@ -39,9 +39,9 @@ export class AuditorLiveClient extends EventEmitter {
     }
   }
 
-  async #startSession({ preRollPcm = null, preRollStartMs = null } = {}, generation) {
+  async #startSession({ preRollPcm = null, preRollStartMs = null, delivery = null } = {}, generation) {
     if (!this.#baseUrl || !this.#source) throw new Error('Auditor live source URL is not configured');
-    const metadata = { source: this.#source, language: this.#language, client_ref: 'pivoice-main' };
+    const metadata = { source: this.#source, language: this.#language, client_ref: 'pivoice-main', ...(delivery ? { delivery } : {}) };
     let request;
     if (Buffer.isBuffer(preRollPcm) && preRollPcm.length > 0) {
       const form = new FormData();

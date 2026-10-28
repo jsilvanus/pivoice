@@ -54,8 +54,8 @@ export function createServer({ service, store, token = null, allowInsecure = fal
     stopCapture: () => ({ body: service.stopCapture() }),
     getActivityIdleClose: () => ({ body: { idleCloseSeconds: store.get().activity.idleCloseSeconds, prerollSeconds: store.get().activity.prerollSeconds } }),
     startActivitySession: async ({ body }) => {
-      if (!body || Object.keys(body).some((key) => key !== 'trigger')) throw new HttpError(400, 'invalid_request', 'Body may contain only trigger');
-      return { body: await service.startActivitySession(body.trigger ?? 'speech') };
+      if (!body || Object.keys(body).some((key) => key !== 'trigger' && key !== 'delivery')) throw new HttpError(400, 'invalid_request', 'Body may contain only trigger and delivery');
+      return { body: await service.startActivitySession(body.trigger ?? 'speech', body.delivery) };
     },
     stopActivitySession: async ({ body }) => {
       if (!body || Object.keys(body).some((key) => key !== 'reason')) throw new HttpError(400, 'invalid_request', 'Body may contain only reason');

@@ -365,7 +365,7 @@ export class PiVoiceService {
     this.#publish('activity', { trigger, at: new Date(this.#now()).toISOString() });
   }
 
-  async startActivitySession(trigger = 'speech') {
+  async startActivitySession(trigger = 'speech', delivery = null) {
     const cfg = this.#store.get().auditor;
     if (!this.capture.running) throw new ServiceError(409, 'capture_not_running', 'Capture must be running before an activity session can start');
     if (!this.#liveAuditor || cfg.mode === 'off') throw new ServiceError(409, 'auditor_not_configured', 'Auditor live mode is not configured or is disabled');
@@ -373,7 +373,7 @@ export class PiVoiceService {
     if (cfg.startWhen === 'speech' && trigger !== 'speech') throw new ServiceError(409, 'trigger_not_enabled', 'Auditor is configured to start on speech only');
     if (!['speech', 'music'].includes(trigger)) throw new ServiceError(400, 'invalid_trigger', 'trigger must be speech or music');
     const preRoll = this.#preroll.snapshotWithTiming();
-    const status = await this.#liveAuditor.start({ preRollPcm: preRoll.pcm, preRollStartMs: preRoll.startMs });
+    const status = await this.#liveAuditor.start({ preRollPcm: preRoll.pcm, preRollStartMs: preRoll.startMs, delivery });
     this.#publish('activity-session', { state: 'running', trigger, preRollBytes: preRoll.pcm.length, ...status });
     return { ...status, trigger, preRollBytes: preRoll.pcm.length };
   }
