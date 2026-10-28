@@ -148,9 +148,10 @@ paths:
   /api/v1/activity/idle-close:
     get:
       operationId: getActivityIdleClose
+      deprecated: true
       tags:
         - activity
-      summary: Read the live STT/MR idle-close timeout
+      summary: Legacy PiVoice copy of idle-close setting; PiGateway owns the active timer
       responses:
         "200":
           description: Current timeout in seconds (0 disables automatic close)
@@ -172,9 +173,10 @@ paths:
           $ref: "#/components/responses/Unauthorized"
     put:
       operationId: setActivityIdleClose
+      deprecated: true
       tags:
         - activity
-      summary: Set the live STT/MR idle-close timeout
+      summary: Update legacy idle-close setting; PiGateway owns the active timer
       requestBody:
         required: true
         content:
@@ -196,14 +198,18 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [idleCloseSeconds]
+                required: [idleCloseSeconds, prerollSeconds]
                 properties:
                   idleCloseSeconds:
                     type: integer
                     minimum: 0
                     maximum: 3600
+                  prerollSeconds:
+                    type: integer
+                    minimum: 0
+                    maximum: 30
         "400":
-          $ref: "#/components/responses/Unauthorized"
+          description: Invalid request body
         "401":
           $ref: "#/components/responses/Unauthorized"
   /api/v1/activity/session/start:
