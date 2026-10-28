@@ -360,6 +360,7 @@ export class PiVoiceService {
     if (!this.capture.running) throw new ServiceError(409, 'capture_not_running', 'Capture must be running before an activity session can start');
     if (!this.#liveAuditor || cfg.mode === 'off') throw new ServiceError(409, 'auditor_not_configured', 'Auditor live mode is not configured or is disabled');
     if (cfg.startWhen === 'capture_start') throw new ServiceError(409, 'capture_start_mode', 'Auditor is configured to start with capture, not on activity');
+    if (cfg.startWhen === 'speech' && trigger !== 'speech') throw new ServiceError(409, 'trigger_not_enabled', 'Auditor is configured to start on speech only');
     if (!['speech', 'music'].includes(trigger)) throw new ServiceError(400, 'invalid_trigger', 'trigger must be speech or music');
     const preRollPcm = this.#preroll.snapshot();
     const status = await this.#liveAuditor.start({ preRollPcm });
