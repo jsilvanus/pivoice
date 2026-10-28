@@ -34,7 +34,11 @@ export function createServer({ service, store, token = null, allowInsecure = fal
   };
 
   const handlers = {
-    getStatus: () => ({ body: service.status() }),
+    getStatus: () => {
+      const body = service.status();
+      service.pollCompleted();
+      return { body };
+    },
     listAudioDevices: async () => ({ body: await service.listDevices() }),
     getConfig: () => ({ body: redactConfig(store.get()) }),
     updateConfig: async ({ body }) => {
