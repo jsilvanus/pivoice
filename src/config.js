@@ -58,8 +58,10 @@ export const configSchema = z.object({
     })
     .prefault({}),
   activity: z.object({
-    /** Shared inactivity timeout for activity-triggered STT/MR sessions; 0 disables automatic close. */
+    /** PiGateway owns this timeout; 0 disables automatic close. */
     idleCloseSeconds: z.number().int().min(0).max(3600).default(15),
+    /** Rolling PCM retained before a gateway-opened STT/MR session. */
+    prerollSeconds: z.number().int().min(0).max(30).default(5),
   }).prefault({}),
   auditor: z
     .object({
