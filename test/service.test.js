@@ -121,3 +121,38 @@ test('youtube auto sends captions only while the stream is online', async () => 
   assert.equal(service.captionsStatus().youtube.effective, 'off');
   service.stop();
 });
+
+test('Auditor pull mode starts on capture start and consumes Auditor-owned RTSP transcripts', async () => {
+  const { store } = await tempStore({
+    capture: { mode: 'simulated' },
+    auditor: {
+      url: 'http://auditor:8090',
+      liveSourceUrl: 'rtsp://mediamtx:8554/church',
+      startWhen: 'capture_start',
+      mode: 'on',
+    },
+  });
+  const calls = [];
+  const fetchFn = async (url, init = {}) => {
+    calls.push({ url, init });
+    if (init.method === 'POST' && url.endsWith('/v1/live')) {
+      return jsonResponse({ id: 'live-session-1' }, 202);
+    }
+    if (url.endsWith('/events')) {
+      return new Response('event: transcript\ndata: {"sequence":1,"text":"Siunatkoon","language":"fi","wall_start":"2026-10-28T10:00:00.000Z","wall_end":"2026-10-28T10:00:01.000Z"}\n\n', {
+        headers: { 'content-type': 'text/event-stream' },
+      });
+    }
+    return jsonResponse({ id: 'live-session-1' });
+  };
+  const service = new PiVoiceService({ store, spawn: fakeSpawn(), fetchFn, now: () => NOW });
+  const events = [];
+  service.subscribe((event) => events.push(event));
+  service.startCapture();
+  await waitFor(() => events.some((event) => event.type === 'transcript'));
+  assert.equal(calls[0].url, 'http://auditor:8090/v1/live');
+  assert.equal(JSON.parse(calls[0].init.body).source, 'rtsp://mediamtx:8554/church');
+  assert.equal(events.find((event) => event.type === 'transcript').data.text, 'Siunatkoon');
+  assert.equal(service.status().transcription.configured, false, 'no chunk uploads in pull mode');
+  service.stop();
+});
