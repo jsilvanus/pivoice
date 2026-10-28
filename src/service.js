@@ -112,6 +112,7 @@ export class PiVoiceService {
     this.#autoCaptureStartedAt = null;
     this.capture.start();
     this.radio.start();
+    this.#maybeStartAuditorLive('capture_start');
     return this.status();
   }
 
@@ -126,6 +127,7 @@ export class PiVoiceService {
     this.radio.stop();
     this.capture.stop();
     this.transcriber.clear();
+    this.#liveAuditor?.stop();
     this.#autoCaptureStartedAt = null;
     this.#telemetry?.sendSnapshot();
   }
@@ -151,6 +153,7 @@ export class PiVoiceService {
           this.#autoCaptureStartedAt = this.#now();
           this.capture.start();
           this.radio.start();
+          this.#maybeStartAuditorLive('capture_start');
         } else {
           this.#scheduleAutoProbe(capture.autoPollSeconds * 1000);
         }
@@ -212,6 +215,7 @@ export class PiVoiceService {
       startedAt: new Date(this.#startedAt).toISOString(),
       uptimeSec: Math.round((this.#now() - this.#startedAt) / 1000),
       capture: { ...this.capture.status(), policy: cfg.capture.policy, autoPollSeconds: cfg.capture.autoPollSeconds },
+      auditorLive: this.#liveAuditor?.status() ?? { configured: false, running: false, sessionId: null },
       voice: { open: this.voice.open, lastVoiceMs: Number.isFinite(this.voice.lastVoiceMs) ? this.voice.lastVoiceMs : null },
       radio: this.radio.status(),
       transcription: { mode: cfg.auditor.mode, ...this.transcriber.status() },
@@ -263,7 +267,10 @@ export class PiVoiceService {
 
   #buildVoice(cfg) {
     this.voice = new VoiceGate(cfg.voice);
-    this.voice.on('open', ({ preroll }) => this.radio.setVoice(true, preroll));
+    this.voice.on('open', ({ preroll }) => {
+      this.radio.setVoice(true, preroll);
+      this.#maybeStartAuditorLive('speech');
+    });
     this.voice.on('close', () => this.radio.setVoice(false));
     this.radio.setVoice(false);
   }
