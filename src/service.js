@@ -48,6 +48,9 @@ export class PiVoiceService {
   #spectral;
   #silero;
   #sileroInit = null;
+  #auditorIdleTimer = null;
+  #speechActive = false;
+  #musicActive = false;
 
   constructor({
     store, spawn, fetchFn = globalThis.fetch, createSender, execFile, now = Date.now,
@@ -73,14 +76,25 @@ export class PiVoiceService {
     this.#spectral = new SpectralClassifier({ sampleRate: 16000 });
     this.#spectral.on('change', (status) => {
       this.#publish('classification', status);
-      if (status.label === 'music') this.#maybeStartAuditorLive('music');
+      this.#musicActive = status.label === 'music';
+      if (this.#musicActive) this.#activityDetected('music');
+      else this.#scheduleAuditorIdleClose();
     });
     this.#silero = new SileroVad();
     this.#silero.on('speech', (status) => {
+      this.#speechActive = true;
       this.#publish('speech-detection', status);
-      this.#maybeStartAuditorLive('speech');
+      this.#activityDetected('speech');
     });
-    this.#silero.on('status', (status) => this.#publish('speech-detection', status));
+    this.#silero.on('silence', (status) => {
+      this.#speechActive = false;
+      this.#publish('speech-detection', status);
+      this.#scheduleAuditorIdleClose();
+    });
+    this.#silero.on('status', (status) => {
+      this.#speechActive = status.speaking;
+      this.#publish('speech-detection', status);
+    });
     this.#sileroInit = this.#silero.initialize();
     this.#applyAuditor(cfg);
     this.#buildCaptions(cfg);
@@ -284,6 +298,8 @@ export class PiVoiceService {
     this.#youtube.stop();
     this.stopCapture();
     this.#telemetry?.stop();
+    clearTimeout(this.#auditorIdleTimer);
+    this.#auditorIdleTimer = null;
     this.#silero.close().catch(() => {});
   }
 
@@ -328,6 +344,29 @@ export class PiVoiceService {
     }
   }
 
+  #activityDetected(trigger) {
+    clearTimeout(this.#auditorIdleTimer);
+    this.#auditorIdleTimer = null;
+    this.#maybeStartAuditorLive(trigger);
+  }
+
+  #scheduleAuditorIdleClose() {
+    clearTimeout(this.#auditorIdleTimer);
+    this.#auditorIdleTimer = null;
+    const cfg = this.#store.get().auditor;
+    if (!this.#liveAuditor?.running || cfg.idleCloseSeconds <= 0 || cfg.startWhen === 'capture_start') return;
+    const activity = cfg.startWhen === 'speech' ? this.#speechActive : (this.#speechActive || this.#musicActive);
+    if (activity) return;
+    this.#auditorIdleTimer = setTimeout(() => {
+      this.#auditorIdleTimer = null;
+      const current = this.#store.get().auditor;
+      const stillActive = current.startWhen === 'speech' ? this.#speechActive : (this.#speechActive || this.#musicActive);
+      if (stillActive || !this.#liveAuditor?.running || current.idleCloseSeconds <= 0) return;
+      this.#liveAuditor.stop().catch((err) => this.#publish('auditor-live', { type: 'error', message: err.message }));
+    }, cfg.idleCloseSeconds * 1000);
+    this.#auditorIdleTimer.unref?.();
+  }
+
   #maybeStartAuditorLive(trigger) {
     const cfg = this.#store.get().auditor;
     if (!this.#liveAuditor || cfg.mode === 'off' || this.#liveAuditor.running) return;
@@ -337,6 +376,8 @@ export class PiVoiceService {
         ? trigger === 'speech'
         : trigger === 'speech' || trigger === 'music';
     if (shouldStart) {
+      clearTimeout(this.#auditorIdleTimer);
+      this.#auditorIdleTimer = null;
       this.#liveAuditor.start().catch((err) => {
         this.#publish('auditor-live', { type: 'error', message: err.message });
       });
