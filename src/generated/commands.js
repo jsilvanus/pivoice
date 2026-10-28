@@ -67,10 +67,10 @@ export const commands = [
     "auth": "bearer"
   },
   {
-    "operationId": "getTranscriptionIdleClose",
-    "command": "get-transcription-idle-close",
+    "operationId": "getActivityIdleClose",
+    "command": "get-activity-idle-close",
     "method": "GET",
-    "path": "/api/v1/transcription/idle-close",
+    "path": "/api/v1/activity/idle-close",
     "summary": "Read the live STT/MR idle-close timeout",
     "pathParams": [],
     "hasBody": false,
@@ -89,10 +89,10 @@ export const commands = [
     "auth": "bearer"
   },
   {
-    "operationId": "setTranscriptionIdleClose",
-    "command": "set-transcription-idle-close",
+    "operationId": "setActivityIdleClose",
+    "command": "set-activity-idle-close",
     "method": "PUT",
-    "path": "/api/v1/transcription/idle-close",
+    "path": "/api/v1/activity/idle-close",
     "summary": "Set the live STT/MR idle-close timeout",
     "pathParams": [],
     "hasBody": true,
