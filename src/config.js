@@ -22,6 +22,7 @@ export const configSchema = z.object({
     .object({
       mode: z.enum(['alsa', 'simulated']).default('alsa'),
       policy: MODE.default('on'),
+      autoPollMode: z.enum(['continuous', 'scheduled']).default('scheduled'),
       autoPollSeconds: z.number().int().min(5).max(3600).default(120),
       autoProbeSeconds: z.number().int().min(1).max(5).default(2),
       autoQuietSeconds: z.number().int().min(5).max(600).default(30),
