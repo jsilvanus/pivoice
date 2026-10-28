@@ -63,3 +63,18 @@ test('service telemetry snapshot reports stopped capture as unknown and no fake 
     service.stop();
   }
 });
+
+
+test('health-poll packet uses message type 2 and preserves the same snapshot layout', () => {
+  const packet = encodePiVoicePacket({
+    rmsDbfs: -20,
+    peakDbfs: -2,
+    classification: 'silence',
+    confidence: null,
+    capture: { state: 'stopped', sampleFormat: 'unknown', channels: 1, sampleRateHz: 48000 },
+    publisher: 'stopped',
+  }, 9, 1_761_600_000_999, 2);
+  assert.equal(packet.length, PIVOICE_PACKET_BYTES);
+  assert.equal(packet.readUInt8(3), 2);
+  assert.equal(packet.readUInt8(28), 1, 'classification remains present in poll snapshots');
+});
