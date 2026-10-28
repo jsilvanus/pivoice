@@ -27,7 +27,9 @@ export class RadioOutputs {
   #now;
   #minRestartMs;
   #maxRestartMs;
-  #bitrate = '96k';\n  #sampleRate = SAMPLE_RATE;\n  #channels = CHANNELS;
+  #bitrate = '96k';
+  #sampleRate = SAMPLE_RATE;
+  #channels = CHANNELS;
   #active = false;
   #voice = false;
   #outputs = new Map();
@@ -94,7 +96,8 @@ export class RadioOutputs {
     for (const out of this.#outputs.values()) {
       const stdin = out.child?.stdin;
       if (!stdin || stdin.destroyed) continue;
-      const sourceBytesPerMs = this.#sampleRate * this.#channels * 2 / 1000;\n      if (stdin.writableLength > MAX_BACKLOG_MS * sourceBytesPerMs) {
+      const sourceBytesPerMs = this.#sampleRate * this.#channels * 2 / 1000;
+      if (stdin.writableLength > MAX_BACKLOG_MS * sourceBytesPerMs) {
         out.dropped++;
         continue;
       }
