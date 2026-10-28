@@ -301,7 +301,9 @@ export class PiVoiceService {
         })
       : null;
     this.transcriber.configure({ auditor, language: cfg.auditor.language, maxQueue: cfg.auditor.maxQueue });
-    if (this.capture.running) this.#maybeStartAuditorLive('capture_start');
+    if (this.capture.running) {
+      this.#maybeStartAuditorLive(cfg.auditor.startWhen === 'capture_start' ? 'capture_start' : (this.voice.open ? 'speech' : 'configure'));
+    }
   }
 
   #maybeStartAuditorLive(trigger) {
