@@ -23,15 +23,25 @@ export class AuditorLiveClient extends EventEmitter {
   get running() { return this.#sessionId !== null && !this.#stopping; }
   status() { return { configured: Boolean(this.#baseUrl && this.#source), running: this.running, sessionId: this.#sessionId }; }
 
-  async start() {
+  async start({ preRollPcm = null } = {}) {
     if (this.running) return this.status();
     if (!this.#baseUrl || !this.#source) throw new Error('Auditor live source URL is not configured');
     this.#stopping = false;
-    const response = await this.#fetch(`${this.#baseUrl}/v1/live`, {
-      method: 'POST',
-      headers: this.#headers({ 'content-type': 'application/json' }),
-      body: JSON.stringify({ source: this.#source, language: this.#language, client_ref: 'pivoice-main' }),
-    });
+    const metadata = { source: this.#source, language: this.#language, client_ref: 'pivoice-main' };
+    let request;
+    if (Buffer.isBuffer(preRollPcm) && preRollPcm.length > 0) {
+      const form = new FormData();
+      form.set('metadata', JSON.stringify({ ...metadata, has_preroll: true }));
+      form.set('preroll', new Blob([preRollPcm], { type: 'application/octet-stream' }), 'preroll.pcm');
+      request = { method: 'POST', headers: this.#headers(), body: form };
+    } else {
+      request = {
+        method: 'POST',
+        headers: this.#headers({ 'content-type': 'application/json' }),
+        body: JSON.stringify(metadata),
+      };
+    }
+    const response = await this.#fetch(`${this.#baseUrl}/v1/live`, request);
     if (!response.ok) throw new Error(`Auditor live start failed (HTTP ${response.status})`);
     const body = await response.json();
     const id = body.id ?? body.session_id ?? body.session?.id;
