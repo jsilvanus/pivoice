@@ -155,11 +155,11 @@ export class PiVoiceService {
           this.radio.start();
           this.#maybeStartAuditorLive('capture_start');
         } else {
-          this.#scheduleAutoProbe(capture.autoPollSeconds * 1000);
+          this.#scheduleAutoProbe(capture.autoPollMode === 'continuous' ? 0 : capture.autoPollSeconds * 1000);
         }
       } catch (err) {
         this.#publish('capture-probe', { at: new Date(this.#now()).toISOString(), error: err.message });
-        this.#scheduleAutoProbe(this.#store.get().capture.autoPollSeconds * 1000);
+        this.#scheduleAutoProbe(this.#store.get().capture.autoPollMode === 'continuous' ? 0 : this.#store.get().capture.autoPollSeconds * 1000);
       }
     }, Math.max(0, delayMs));
     this.#autoTimer.unref?.();
@@ -214,7 +214,7 @@ export class PiVoiceService {
     return {
       startedAt: new Date(this.#startedAt).toISOString(),
       uptimeSec: Math.round((this.#now() - this.#startedAt) / 1000),
-      capture: { ...this.capture.status(), policy: cfg.capture.policy, autoPollSeconds: cfg.capture.autoPollSeconds },
+      capture: { ...this.capture.status(), policy: cfg.capture.policy, autoPollMode: cfg.capture.autoPollMode, autoPollSeconds: cfg.capture.autoPollSeconds },
       auditorLive: this.#liveAuditor?.status() ?? { configured: false, running: false, sessionId: null },
       voice: { open: this.voice.open, lastVoiceMs: Number.isFinite(this.voice.lastVoiceMs) ? this.voice.lastVoiceMs : null },
       radio: this.radio.status(),
