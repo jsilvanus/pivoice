@@ -1,6 +1,6 @@
 import { EventEmitter } from 'node:events';
 import { AuditorClient } from './auditor.js';
-import { CaptureSupervisor, listAudioDevices } from './capture.js';
+import { CaptureSupervisor, listAudioDevices, probeAudio } from './capture.js';
 import { RelayCaptions } from './captions/relay.js';
 import { StreamOnlineWatcher } from './captions/stream-status.js';
 import { YouTubeCaptions } from './captions/youtube.js';
@@ -33,6 +33,9 @@ export class PiVoiceService {
   #fetchFn;
   #createSender;
   #execFile;
+  #spawn;
+  #autoTimer = null;
+  #autoCaptureStartedAt = null;
   #stream = null;
   #relay = null;
   #youtube = null;
@@ -49,6 +52,7 @@ export class PiVoiceService {
     this.#fetchFn = fetchFn;
     this.#createSender = createSender;
     this.#execFile = execFile;
+    this.#spawn = spawn;
     this.#hub.setMaxListeners(0);
 
     const cfg = store.get();
@@ -88,18 +92,72 @@ export class PiVoiceService {
     return () => this.#hub.off('event', handler);
   }
 
+  /** Start according to the persisted capture policy (used at process startup). */
+  startConfiguredCapture() {
+    const cfg = this.#store.get().capture;
+    if (cfg.policy === 'off') return this.status();
+    if (cfg.policy === 'auto') {
+      this.#scheduleAutoProbe(0);
+      return this.status();
+    }
+    return this.startCapture();
+  }
+
+  /** Explicit operator start; overrides auto polling until explicitly stopped. */
   startCapture() {
+    clearTimeout(this.#autoTimer);
+    this.#autoTimer = null;
+    this.#autoCaptureStartedAt = null;
     this.capture.start();
     this.radio.start();
     return this.status();
   }
 
   stopCapture() {
+    clearTimeout(this.#autoTimer);
+    this.#autoTimer = null;
+    this.#stopCaptureNow();
+    return this.status();
+  }
+
+  #stopCaptureNow() {
     this.radio.stop();
     this.capture.stop();
     this.transcriber.clear();
+    this.#autoCaptureStartedAt = null;
     this.#telemetry?.sendSnapshot();
-    return this.status();
+  }
+
+  #scheduleAutoProbe(delayMs) {
+    clearTimeout(this.#autoTimer);
+    const cfg = this.#store.get();
+    if (cfg.capture.policy !== 'auto') return;
+    this.#autoTimer = setTimeout(async () => {
+      this.#autoTimer = null;
+      if (this.capture.running || this.#store.get().capture.policy !== 'auto') return;
+      try {
+        const capture = this.#store.get().capture;
+        const levelDbfs = capture.mode === 'simulated' ? -120 : await probeAudio({
+          device: capture.device,
+          channels: capture.channels,
+          sampleRate: capture.sampleRate,
+          durationSeconds: capture.autoProbeSeconds,
+          spawn: this.#spawn,
+        });
+        this.#publish('capture-probe', { at: new Date(this.#now()).toISOString(), levelDbfs });
+        if (levelDbfs >= this.#store.get().voice.thresholdDb) {
+          this.#autoCaptureStartedAt = this.#now();
+          this.capture.start();
+          this.radio.start();
+        } else {
+          this.#scheduleAutoProbe(capture.autoPollSeconds * 1000);
+        }
+      } catch (err) {
+        this.#publish('capture-probe', { at: new Date(this.#now()).toISOString(), error: err.message });
+        this.#scheduleAutoProbe(this.#store.get().capture.autoPollSeconds * 1000);
+      }
+    }, Math.max(0, delayMs));
+    this.#autoTimer.unref?.();
   }
 
   /** Notify PiGateway when a status/health poll has completed. */
@@ -151,7 +209,7 @@ export class PiVoiceService {
     return {
       startedAt: new Date(this.#startedAt).toISOString(),
       uptimeSec: Math.round((this.#now() - this.#startedAt) / 1000),
-      capture: this.capture.status(),
+      capture: { ...this.capture.status(), policy: cfg.capture.policy, autoPollSeconds: cfg.capture.autoPollSeconds },
       voice: { open: this.voice.open, lastVoiceMs: Number.isFinite(this.voice.lastVoiceMs) ? this.voice.lastVoiceMs : null },
       radio: this.radio.status(),
       transcription: { mode: cfg.auditor.mode, ...this.transcriber.status() },
@@ -192,6 +250,8 @@ export class PiVoiceService {
   }
 
   stop() {
+    clearTimeout(this.#autoTimer);
+    this.#autoTimer = null;
     this.#stream.stop();
     this.#relay.stop();
     this.#youtube.stop();
@@ -273,7 +333,17 @@ export class PiVoiceService {
   #onPcm(pcm, startMs) {
     this.#meter = measurePcm(pcm, this.#now());
     this.voice.push(pcm, startMs);
-    this.radio.write(pcm);
+    const captureCfg = this.#store.get().capture;
+    if (captureCfg.policy === 'auto' && this.#autoCaptureStartedAt !== null) {
+      const lastSoundAt = Number.isFinite(this.voice.lastVoiceMs) && this.voice.lastVoiceMs >= this.#autoCaptureStartedAt
+        ? this.voice.lastVoiceMs
+        : this.#autoCaptureStartedAt;
+      if (this.#now() - lastSoundAt >= captureCfg.autoQuietSeconds * 1000) {
+        this.#stopCaptureNow();
+        this.#scheduleAutoProbe(captureCfg.autoPollSeconds * 1000);
+        return;
+      }
+    }
     if (!this.transcriber.configured) return;
     for (const chunk of this.#chunker.push(pcm, startMs)) {
       if (this.#transcriptionWanted(chunk.startMs)) this.transcriber.enqueue(chunk);
