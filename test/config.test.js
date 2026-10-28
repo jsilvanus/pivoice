@@ -17,7 +17,7 @@ test('defaults are valid and closed (no targets, captions off, no secrets)', () 
   assert.equal(cfg.captions.youtube.mode, 'off');
   assert.equal(cfg.radio.targets.length, 0);
   assert.equal(cfg.auditor.apiKey, null);
-  assert.equal(cfg.auditor.startWhen, 'capture_start');
+  assert.equal(cfg.auditor.startWhen, 'speech_or_music');
   assert.equal(cfg.activity.idleCloseSeconds, 15);
   assert.equal(cfg.auditor.liveSourceUrl, null);
 });
