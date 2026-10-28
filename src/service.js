@@ -10,6 +10,7 @@ import { RadioOutputs } from './radio.js';
 import { Transcriber } from './transcriber.js';
 import { VoiceGate } from './vad.js';
 import { SpectralClassifier } from './spectral.js';
+import { SileroVad } from './silero-vad.js';
 import { PiVoiceTelemetryPublisher } from './telemetry.js';
 
 export class ServiceError extends Error {
@@ -45,6 +46,8 @@ export class PiVoiceService {
   #liveAuditor = null;
   #meter = { rmsDbfs: null, peakDbfs: null, measuredAt: 0 };
   #spectral;
+  #silero;
+  #sileroInit = null;
 
   constructor({
     store, spawn, fetchFn = globalThis.fetch, createSender, execFile, now = Date.now,
@@ -70,9 +73,15 @@ export class PiVoiceService {
     this.#spectral = new SpectralClassifier({ sampleRate: 16000 });
     this.#spectral.on('change', (status) => {
       this.#publish('classification', status);
-      if (status.label === 'speech') this.#maybeStartAuditorLive('speech');
-      else if (status.label === 'music') this.#maybeStartAuditorLive('music');
+      if (status.label === 'music') this.#maybeStartAuditorLive('music');
     });
+    this.#silero = new SileroVad();
+    this.#silero.on('speech', (status) => {
+      this.#publish('speech-detection', status);
+      this.#maybeStartAuditorLive('speech');
+    });
+    this.#silero.on('status', (status) => this.#publish('speech-detection', status));
+    this.#sileroInit = this.#silero.initialize();
     this.#applyAuditor(cfg);
     this.#buildCaptions(cfg);
 
@@ -135,6 +144,7 @@ export class PiVoiceService {
     this.radio.stop();
     this.capture.stop();
     this.#spectral.reset();
+    this.#silero.reset();
     this.transcriber.clear();
     this.#liveAuditor?.stop();
     this.#autoCaptureStartedAt = null;
@@ -227,6 +237,7 @@ export class PiVoiceService {
       auditorLive: this.#liveAuditor?.status() ?? { configured: false, running: false, sessionId: null },
       voice: { open: this.voice.open, lastVoiceMs: Number.isFinite(this.voice.lastVoiceMs) ? this.voice.lastVoiceMs : null },
       spectral: this.#spectral.status,
+      speechDetection: this.#silero.status,
       radio: this.radio.status(),
       transcription: { mode: cfg.auditor.mode, ...this.transcriber.status() },
       captions: this.captionsStatus(),
@@ -273,6 +284,7 @@ export class PiVoiceService {
     this.#youtube.stop();
     this.stopCapture();
     this.#telemetry?.stop();
+    this.#silero.close().catch(() => {});
   }
 
   #buildVoice(cfg) {
@@ -384,7 +396,9 @@ export class PiVoiceService {
 
   #onPcm(pcm, startMs) {
     this.#meter = measurePcm(pcm, this.#now());
-    this.#spectral.push(pcm, startMs + pcm.length / 32);
+    const endMs = startMs + pcm.length / 32;
+    this.#spectral.push(pcm, endMs);
+    this.#silero.push(pcm, endMs);
     this.voice.push(pcm, startMs);
     const captureCfg = this.#store.get().capture;
     if (captureCfg.policy === 'auto' && this.#autoCaptureStartedAt !== null) {
@@ -406,7 +420,8 @@ export class PiVoiceService {
   // Captions are only produced from speech, so "on" and "auto" differ only for chunks of silence.
   #transcriptionWanted(atMs) {
     const mode = this.#store.get().auditor.mode;
-    return mode === 'on' || (mode === 'auto' && this.voice.lastVoiceMs >= atMs);
+    const speechActive = this.#silero.ready ? this.#silero.speaking : this.voice.lastVoiceMs >= atMs;
+    return mode === 'on' || (mode === 'auto' && speechActive);
   }
 
   #onTranscript(event) {
