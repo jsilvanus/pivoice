@@ -35,3 +35,26 @@ test('pre-roll is capped at the configured length', () => {
   gate.push(loud(10), 1000);
   assert.equal(preroll.length, 8000);
 });
+
+
+test('spectral classifier skips quiet frames and detects tonal music versus noise-like speech', () => {
+  const { SpectralClassifier } = require('../src/vad.js');
+  const classifier = new SpectralClassifier({ thresholdDb: -45 });
+  const silence = Buffer.alloc(1024 * 2);
+  assert.equal(classifier.push(silence).label, 'silence');
+  assert.equal(classifier.status.features.flatness, null);
+
+  const tone = Buffer.alloc(1024 * 2);
+  for (let i = 0; i < 1024; i++) tone.writeInt16LE(Math.round(10000 * Math.sin(2 * Math.PI * 220 * i / 16000)), i * 2);
+  assert.equal(classifier.push(tone).label, 'music');
+
+  // Deterministic pseudo-random, noise-like signal approximates broadband consonant energy.
+  const noise = Buffer.alloc(1024 * 2);
+  let seed = 123456789;
+  for (let i = 0; i < 1024; i++) {
+    seed = (1664525 * seed + 1013904223) >>> 0;
+    noise.writeInt16LE(((seed >>> 16) - 32768) >> 1, i * 2);
+  }
+  assert.equal(classifier.push(noise).label, 'speech');
+  assert.ok(classifier.status.features.flatness > 0);
+});
