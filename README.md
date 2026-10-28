@@ -4,7 +4,11 @@ Headless audio service for the PiMatrix Raspberry Pi. One Hama USB microphone is
 
 ## Modes
 
-Every consumer has a mode: `on`, `off` or `auto`. Web radio and transcription can use voice activity detection; captions can be filtered by speech. Voice detection is an energy gate (`voice.thresholdDb`, `voice.hangoverSeconds`, `voice.prerollSeconds`).
+Capture has a policy separate from its input backend: `capture.policy=on` captures continuously, `off` remains stopped, and `auto` runs short scheduled ALSA probes (`autoPollSeconds`, `autoProbeSeconds`) and starts full capture when probe level crosses `voice.thresholdDb`. Auto capture stops after `autoQuietSeconds` without sound and returns to scheduled probes. `capture.mode` remains the backend (`alsa` or `simulated`). Every consumer has its own `on`, `off` or `auto` mode. Voice detection is currently an energy gate (`voice.thresholdDb`, `voice.hangoverSeconds`, `voice.prerollSeconds`).
+
+## Auditor pull mode
+
+By default, PiVoice uploads analysis chunks to liturgos-auditor's `/inference` endpoint. To let Auditor pull the stream itself, configure `auditor.liveSourceUrl` as the RTSP/SRT URL of the MediaMTX stream reachable from the Auditor host, and configure `auditor.startWhen`: `capture_start`, `speech`, or `speech_or_music`. PiVoice then starts a `POST /v1/live` session and consumes its SSE transcript events; it does not upload audio chunks in this mode. Auditor must have live sessions enabled and allow the source host. The speech/music trigger currently uses PiVoice's energy gate: it wakes on sound above threshold and is not yet a semantic speech-vs-music classifier. Auditor itself performs the live stream's 16 kHz mono S16LE conversion.
 
 ## PiGateway telemetry
 
