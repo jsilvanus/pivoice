@@ -98,8 +98,13 @@ export class CaptureSupervisor extends EventEmitter {
 
     if (this.#config.mode === 'simulated') {
       this.#setState('running');
-      const frame = Buffer.alloc(BYTES_PER_MS * 100);
-      this.#timer = setInterval(() => this.#onData(frame), 100);
+      const analysisFrame = Buffer.alloc(BYTES_PER_MS * 100);
+      const sourceBytesPerMs = this.#config.sampleRate * this.#config.channels * 2 / 1000;
+      const sourceFrame = Buffer.alloc(sourceBytesPerMs * 100);
+      this.#timer = setInterval(() => {
+        this.#onData(analysisFrame, 'pcm');
+        this.#onData(sourceFrame, 'source');
+      }, 100);
       return;
     }
 
@@ -107,7 +112,10 @@ export class CaptureSupervisor extends EventEmitter {
     this.#child = child;
     this.#setState('running');
     child.stdout.on('data', (buf) => {
-      if (this.#child === child) this.#onData(buf);
+      if (this.#child === child) this.#onData(buf, 'pcm');
+    });
+    child.stdio?.[3]?.on('data', (buf) => {
+      if (this.#child === child) this.#onData(buf, 'source');
     });
     child.stderr?.on('data', (buf) => {
       const lines = buf.toString().split('\n').filter((l) => l.trim());
@@ -125,12 +133,15 @@ export class CaptureSupervisor extends EventEmitter {
     });
   }
 
-  #onData(buf) {
+  #onData(buf, stream = 'pcm') {
     if (!this.#active) return;
-    const startMs = Math.round(this.#base + this.#bytes / BYTES_PER_MS);
-    this.#bytes += buf.length;
+    const sourceBytesPerMs = this.#config.sampleRate * this.#config.channels * 2 / 1000;
+    const bytesPerMs = stream === 'source' ? sourceBytesPerMs : BYTES_PER_MS;
+    const startMs = Math.round(this.#base + (stream === 'source' ? this.#sourceBytes : this.#bytes) / bytesPerMs);
+    if (stream === 'source') this.#sourceBytes += buf.length;
+    else this.#bytes += buf.length;
     if (this.#now() - this.#launchedAt > STABLE_AFTER_MS) this.#backoffMs = this.#minRestartMs;
-    this.emit('pcm', { pcm: buf, startMs });
+    this.emit(stream, { pcm: buf, startMs });
   }
 
   #fail(message) {
