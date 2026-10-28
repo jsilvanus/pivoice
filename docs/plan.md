@@ -232,3 +232,18 @@ PiVoice keeps shared capture running independently of consumer sessions. For gat
 - [PiMatrix](https://github.com/jsilvanus/pimatrix)
 - [Auditor integration guide](https://github.com/jsilvanus/liturgos-auditor/blob/main/docs/integration.md)
 - [LCYT deployment guide](https://github.com/jsilvanus/live-captions-yt/blob/main/docs/DEPLOY.md)
+
+
+## Current Auditor integration status (reviewed 2026-10-28)
+
+The original architecture sketch above predates the activity-session integration and is not the complete current flow. The current design is:
+
+- PiVoice captures and publishes audio independently to the radio path; activity detection is observational and must not block capture or radio.
+- PiVoice maintains a bounded continuous PCM pre-roll buffer (default target 5 seconds) from the shared capture.
+- PiGateway owns the activity-triggered session lifecycle and idle-close timer; its control requests do not carry audio.
+- When PiGateway opens a session, PiVoice submits the buffered PCM directly to Auditor using multipart `POST /v1/live` (`metadata.has_preroll=true` plus binary `preroll`), then continues the live source. Auditor processes pre-roll before live PCM.
+- PiVoice consumes Auditor SSE transcript/status events and fans transcript text out to the existing caption consumers. Radio and transcription failure remain isolated from physical capture.
+
+**Implemented in code:** PiVoice's `src/auditor-live.js` sends multipart pre-roll when a non-empty buffer is supplied and retains JSON compatibility for no-pre-roll starts; the pre-roll buffer and activity-session controls are implemented. OpenAPI documents the service API.
+
+**Remaining verification:** run current PiVoice tests and OpenAPI consistency checks; verify buffer continuity and exact pre-roll/live ordering, bounded-buffer overflow behavior, repeated activity and idle-close races across PiGateway/PiVoice, Auditor disconnect/reconnect, and caption/radio failure isolation. Test on the actual Pi and church audio before deployment. The current architecture diagram above should be treated as a historical overview until it is fully reconciled with this section.
