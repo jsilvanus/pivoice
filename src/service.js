@@ -8,7 +8,7 @@ import { YouTubeCaptions } from './captions/youtube.js';
 import { Chunker } from './pcm.js';
 import { RadioOutputs } from './radio.js';
 import { Transcriber } from './transcriber.js';
-import { SpectralClassifier, VoiceGate } from './vad.js';
+import { VoiceGate } from './vad.js';
 import { SpectralClassifier } from './spectral.js';
 import { PiVoiceTelemetryPublisher } from './telemetry.js';
 
