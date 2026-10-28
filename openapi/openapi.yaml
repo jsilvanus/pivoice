@@ -268,6 +268,10 @@ components:
                 - off
                 - auto
               description: "on: capture continuously; off: no capture; auto: periodically probe for sound, capture while sound is present, then return to probing after quiet timeout."
+            autoPollMode:
+              type: string
+              enum: [continuous, scheduled]
+              description: "continuous probes again immediately after each short check; scheduled waits autoPollSeconds between checks."
             autoPollSeconds:
               type: integer
               minimum: 5
