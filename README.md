@@ -10,6 +10,8 @@ Every consumer has a mode: `on`, `off` or `auto`. Web radio and transcription ca
 
 When `PIVOICE_GATEWAY_HOST` is set, PiVoice sends a 42-byte binary UDP telemetry snapshot to that host every 100 ms. The port is `PIVOICE_GATEWAY_PORT` (default `3101`). Configure the host as the PiGateway LAN IP. This is telemetry only; audio continues to its consumers and is never sent to PiGateway. Snapshots continue when capture is stopped so packet receipt acts as the gateway heartbeat.
 
+The [shared protocol specification](docs/pivoice-telemetry.md) is also recorded in PiGateway.
+
 ### Protocol v1 (42 bytes)
 
 All multi-byte fields are big-endian. No JSON and no audio payload.
