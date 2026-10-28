@@ -17,6 +17,8 @@ export const ROUTES = {
   'GET /api/v1/transcription/events': 'streamTranscriptionEvents',
   'GET /api/v1/activity/idle-close': 'getActivityIdleClose',
   'PUT /api/v1/activity/idle-close': 'setActivityIdleClose',
+  'POST /api/v1/activity/session/start': 'startActivitySession',
+  'POST /api/v1/activity/session/stop': 'stopActivitySession',
   'GET /api/v1/radio': 'getRadio',
   'GET /api/v1/captions/status': 'getCaptionsStatus',
 };
@@ -50,14 +52,22 @@ export function createServer({ service, store, token = null, allowInsecure = fal
     },
     startCapture: () => ({ body: service.startCapture() }),
     stopCapture: () => ({ body: service.stopCapture() }),
-    getActivityIdleClose: () => ({ body: { idleCloseSeconds: store.get().activity.idleCloseSeconds } }),
+    getActivityIdleClose: () => ({ body: { idleCloseSeconds: store.get().activity.idleCloseSeconds, prerollSeconds: store.get().activity.prerollSeconds } }),
+    startActivitySession: async ({ body }) => {
+      if (!body || Object.keys(body).some((key) => key !== 'trigger')) throw new HttpError(400, 'invalid_request', 'Body may contain only trigger');
+      return { body: await service.startActivitySession(body.trigger ?? 'speech') };
+    },
+    stopActivitySession: async ({ body }) => {
+      if (!body || Object.keys(body).some((key) => key !== 'reason')) throw new HttpError(400, 'invalid_request', 'Body may contain only reason');
+      return { body: await service.stopActivitySession(body.reason ?? 'gateway') };
+    },
     setActivityIdleClose: async ({ body }) => {
       if (!body || Object.keys(body).length !== 1 || !Object.hasOwn(body, 'idleCloseSeconds')) {
         throw new HttpError(400, 'invalid_request', 'Body must contain only idleCloseSeconds');
       }
       const { previous, current } = await store.update({ activity: { idleCloseSeconds: body.idleCloseSeconds } });
       service.applyConfig(previous, current);
-      return { body: { idleCloseSeconds: current.auditor.idleCloseSeconds } };
+      return { body: { idleCloseSeconds: current.activity.idleCloseSeconds, prerollSeconds: current.activity.prerollSeconds } };
     },
     getRadio: () => ({ body: { targets: service.radio.status() } }),
     getCaptionsStatus: () => ({ body: service.captionsStatus() }),
