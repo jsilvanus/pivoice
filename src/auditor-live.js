@@ -83,54 +83,77 @@ export class AuditorLiveClient extends EventEmitter {
   }
 
   async #readEvents(id, signal) {
-    const response = await this.#fetch(`${this.#baseUrl}/v1/live/${encodeURIComponent(id)}/events`, {
-      headers: this.#headers({ accept: 'text/event-stream' }), signal,
-    });
-    if (!response.ok || !response.body) throw new Error(`Auditor live events failed (HTTP ${response.status})`);
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let pending = '';
-    let eventName = 'message';
-    let dataLines = [];
-    const dispatch = () => {
-      if (!dataLines.length) return;
-      const raw = dataLines.join('\n');
-      dataLines = [];
+    let lastEventId = null;
+    let backoffMs = 250;
+    while (!signal.aborted && this.#sessionId === id) {
       try {
-        const data = JSON.parse(raw);
-        if (eventName === 'transcript') {
-          const startMs = Date.parse(data.wall_start);
-          const endMs = Date.parse(data.wall_end);
-          if (Number.isFinite(startMs) && Number.isFinite(endMs)) {
-            this.emit('transcript', {
-              seq: Number(data.sequence) || 0, chunkSeq: null, startMs, endMs,
-              text: String(data.text ?? ''), language: data.language ?? this.#language,
-            });
+        const headers = this.#headers({ accept: 'text/event-stream' });
+        if (lastEventId !== null) headers['last-event-id'] = lastEventId;
+        const response = await this.#fetch(`${this.#baseUrl}/v1/live/${encodeURIComponent(id)}/events`, {
+          headers, signal,
+        });
+        if (!response.ok || !response.body) throw new Error(`Auditor live events failed (HTTP ${response.status})`);
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let pending = '';
+        let eventName = 'message';
+        let dataLines = [];
+        const dispatch = () => {
+          if (!dataLines.length) {
+            eventName = 'message';
+            return;
           }
-        } else if (eventName === 'status' || eventName === 'error') {
-          this.emit('live-event', { type: eventName, data });
+          const raw = dataLines.join('\\n');
+          dataLines = [];
+          try {
+            const data = JSON.parse(raw);
+            if (eventName === 'transcript') {
+              const startMs = Date.parse(data.wall_start);
+              const endMs = Date.parse(data.wall_end);
+              if (Number.isFinite(startMs) && Number.isFinite(endMs)) {
+                this.emit('transcript', {
+                  seq: Number(data.sequence) || 0, chunkSeq: null, startMs, endMs,
+                  text: String(data.text ?? ''), language: data.language ?? this.#language,
+                });
+              }
+            } else if (eventName === 'status' || eventName === 'error') {
+              this.emit('live-event', { type: eventName, data });
+            }
+          } catch {
+            this.emit('live-event', { type: 'parse-error' });
+          }
+          eventName = 'message';
+        };
+        try {
+          while (!signal.aborted && this.#sessionId === id) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            pending += decoder.decode(value, { stream: true });
+            let newline;
+            while ((newline = pending.indexOf('\\n')) >= 0) {
+              const line = pending.slice(0, newline).replace(/\\r$/, '');
+              pending = pending.slice(newline + 1);
+              if (!line) dispatch();
+              else if (line.startsWith('id:')) lastEventId = line.slice(3).trim();
+              else if (line.startsWith('event:')) eventName = line.slice(6).trim();
+              else if (line.startsWith('data:')) dataLines.push(line.slice(5).trimStart());
+            }
+          }
+        } finally {
+          try { await reader.cancel(); } catch {}
         }
-      } catch {
-        this.emit('live-event', { type: 'parse-error' });
+        if (signal.aborted || this.#sessionId !== id) return;
+        throw new Error('Auditor live event stream ended; reconnecting');
+      } catch (err) {
+        if (signal.aborted || this.#sessionId !== id) return;
+        this.emit('live-error', err);
+        await new Promise((resolve) => {
+          const timer = setTimeout(resolve, backoffMs);
+          timer.unref?.();
+          signal.addEventListener('abort', () => { clearTimeout(timer); resolve(); }, { once: true });
+        });
+        backoffMs = Math.min(5000, backoffMs * 2);
       }
-      eventName = 'message';
-    };
-    try {
-      while (!signal.aborted) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        pending += decoder.decode(value, { stream: true });
-        let newline;
-        while ((newline = pending.indexOf('\n')) >= 0) {
-          const line = pending.slice(0, newline).replace(/\r$/, '');
-          pending = pending.slice(newline + 1);
-          if (!line) dispatch();
-          else if (line.startsWith('event:')) eventName = line.slice(6).trim();
-          else if (line.startsWith('data:')) dataLines.push(line.slice(5).trimStart());
-        }
-      }
-    } finally {
-      try { await reader.cancel(); } catch {}
     }
   }
 }
