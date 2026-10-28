@@ -5,7 +5,7 @@ const port = Number(process.env.PIVOICE_PORT ?? 8095);
 
 const { service, server, store } = await createApp();
 
-if (store.get().capture.autostart) service.startCapture();
+if (store.get().capture.autostart) service.startConfiguredCapture();
 server.listen(port, host, () => {
   console.log(`pivoice listening on http://${host}:${port}`);
 });
