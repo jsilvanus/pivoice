@@ -16,7 +16,7 @@ test('ffmpeg reads ALSA once and fans out analysis PCM plus source-format PCM', 
   assert.ok(args.includes('pipe:1'));
 });
 
-test('PCM from ffmpeg carries wall-clock start times', async () => {
+test('analysis and source PCM branches have independent wall-clock byte timelines', async () => {
   const spawn = fakeSpawn();
   const now = 1_000_000;
   const cap = new CaptureSupervisor({ config, spawn, now: () => now });
