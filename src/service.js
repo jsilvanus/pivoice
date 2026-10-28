@@ -8,6 +8,7 @@ import { Chunker } from './pcm.js';
 import { RadioOutputs } from './radio.js';
 import { Transcriber } from './transcriber.js';
 import { VoiceGate } from './vad.js';
+import { PiVoiceTelemetryPublisher } from './telemetry.js';
 
 export class ServiceError extends Error {
   constructor(status, code, message) {
@@ -35,10 +36,12 @@ export class PiVoiceService {
   #stream = null;
   #relay = null;
   #youtube = null;
+  #telemetry = null;
+  #meter = { rmsDbfs: null, peakDbfs: null, measuredAt: 0 };
 
   constructor({
     store, spawn, fetchFn = globalThis.fetch, createSender, execFile, now = Date.now,
-    minRestartMs, maxRestartMs, staleMs,
+    minRestartMs, maxRestartMs, staleMs, telemetryHost, telemetryPort = 3101,
   }) {
     this.#store = store;
     this.#now = now;
@@ -63,6 +66,16 @@ export class PiVoiceService {
     this.capture.on('state', (status) => this.#publish('capture', status));
     this.transcriber.on('transcript', (event) => this.#onTranscript(event));
     this.transcriber.on('status', (status) => this.#publish('transcription', status));
+
+    if (telemetryHost) {
+      this.#telemetry = new PiVoiceTelemetryPublisher({
+        host: telemetryHost,
+        port: telemetryPort,
+        now: this.#now,
+        snapshot: () => this.telemetrySnapshot(),
+      });
+      this.#telemetry.start();
+    }
   }
 
   subscribe(listener) {
@@ -136,7 +149,40 @@ export class PiVoiceService {
     };
   }
 
+  /** Fixed-format snapshot used by the binary UDP telemetry publisher. */
+  telemetrySnapshot() {
+    const captureStatus = this.capture.status();
+    const captureRunning = captureStatus.state === 'running' && captureStatus.running;
+    const meterFresh = captureRunning && this.#now() - this.#meter.measuredAt <= 500;
+    const radio = this.radio.status();
+    const publisher = radio.some((target) => target.state === 'running')
+      ? 'publishing'
+      : radio.some((target) => target.state === 'restarting')
+        ? 'reconnecting'
+        : radio.some((target) => target.state === 'error')
+          ? 'error'
+          : 'stopped';
+    return {
+      rmsDbfs: meterFresh ? this.#meter.rmsDbfs : null,
+      peakDbfs: meterFresh ? this.#meter.peakDbfs : null,
+      classification: !captureRunning ? 'unknown' : this.voice.open ? 'speech' : 'silence',
+      confidence: !captureRunning ? null : this.voice.open ? 100 : 0,
+      capture: {
+        state: captureStatus.state === 'running' && captureStatus.running
+          ? 'running'
+          : captureStatus.state === 'restarting' ? 'error' : 'stopped',
+        // ffmpeg normalizes the analysis stream to S16LE; the ALSA input sample format
+        // is not exposed by the current capture process, so report it as unknown.
+        sampleFormat: 'unknown',
+        channels: this.#store.get().capture.channels,
+        sampleRateHz: this.#store.get().capture.sampleRate,
+      },
+      publisher,
+    };
+  }
+
   stop() {
+    this.#telemetry?.stop();
     this.#stream.stop();
     this.#relay.stop();
     this.#youtube.stop();
@@ -215,6 +261,7 @@ export class PiVoiceService {
   }
 
   #onPcm(pcm, startMs) {
+    this.#meter = measurePcm(pcm, this.#now());
     this.voice.push(pcm, startMs);
     this.radio.write(pcm);
     if (!this.transcriber.configured) return;
@@ -239,4 +286,20 @@ export class PiVoiceService {
   #publish(type, data) {
     this.#hub.emit('event', { type, data });
   }
+}
+
+function measurePcm(pcm, measuredAt) {
+  const samples = Math.floor(pcm.length / 2);
+  if (!samples) return { rmsDbfs: null, peakDbfs: null, measuredAt };
+  let sumSquares = 0;
+  let peak = 0;
+  for (let offset = 0; offset + 1 < pcm.length; offset += 2) {
+    const sample = pcm.readInt16LE(offset);
+    const magnitude = Math.abs(sample);
+    sumSquares += sample * sample;
+    if (magnitude > peak) peak = magnitude;
+  }
+  const rms = Math.sqrt(sumSquares / samples);
+  const dbfs = (value) => value <= 0 ? -120 : 20 * Math.log10(value / 32768);
+  return { rmsDbfs: dbfs(rms), peakDbfs: dbfs(peak), measuredAt };
 }
