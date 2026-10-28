@@ -196,7 +196,7 @@ export class PiVoiceService {
       if (wasRunning) this.stopCapture();
       this.capture.configure(next.capture);
       this.#chunker = new Chunker({ chunkMs: next.capture.chunkSeconds * 1000 });
-      if (wasRunning) this.startCapture();
+      if (wasRunning) this.startConfiguredCapture();
     }
     if (changed('voice')) this.#buildVoice(next);
     if (changed('radio') || changed('capture')) this.radio.configure({ targets: next.radio.targets, bitrate: next.radio.bitrate, sampleRate: next.capture.sampleRate, channels: next.capture.channels });
