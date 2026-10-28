@@ -1,5 +1,6 @@
 import { EventEmitter } from 'node:events';
 import { AuditorClient } from './auditor.js';
+import { AuditorLiveClient } from './auditor-live.js';
 import { CaptureSupervisor, listAudioDevices, probeAudio } from './capture.js';
 import { RelayCaptions } from './captions/relay.js';
 import { StreamOnlineWatcher } from './captions/stream-status.js';
@@ -40,6 +41,7 @@ export class PiVoiceService {
   #relay = null;
   #youtube = null;
   #telemetry = null;
+  #liveAuditor = null;
   #meter = { rmsDbfs: null, peakDbfs: null, measuredAt: 0 };
 
   constructor({
