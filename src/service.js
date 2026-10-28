@@ -370,8 +370,8 @@ export class PiVoiceService {
 
   async stopActivitySession(reason = 'idle') {
     if (!this.#liveAuditor) return { configured: false, running: false, sessionId: null };
-    // In continuous-ingest mode, gateway activity windows gate inference only;
-    // the Auditor reader remains attached until capture itself stops.
+    // In continuous-ingest mode, ignore gateway idle-close requests; the Auditor
+    // reader remains attached until capture itself stops, while its VAD gates inference.
     if (this.#store.get().auditor.startWhen === 'capture_start') return this.#liveAuditor.status();
     const status = await this.#liveAuditor.stop();
     this.#publish('activity-session', { state: 'stopped', reason, ...status });
