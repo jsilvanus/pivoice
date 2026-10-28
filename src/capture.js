@@ -9,7 +9,10 @@ const STABLE_AFTER_MS = 30_000;
 export function ffmpegCaptureArgs({ device, channels, sampleRate }) {
   return [
     '-hide_banner', '-loglevel', 'warning', '-nostdin',
-    '-f', 'alsa', '-channels', String(channels), '-sample_rate', String(sampleRate), '-i', device,
+    // Timestamp ALSA packets against the host wall clock at the capture input.
+    // Raw PCM pipes cannot carry packet PTS, so the supervisor maps emitted
+    // samples onto this wall-clock-anchored stream timeline.
+    '-use_wallclock_as_timestamps', '1', '-f', 'alsa', '-channels', String(channels), '-sample_rate', String(sampleRate), '-i', device,
     // Analysis branch: fixed 16 kHz mono PCM for metering, VAD and transcription.
     '-map', '0:a:0', '-ac', String(CHANNELS), '-ar', String(SAMPLE_RATE), '-f', 's16le', 'pipe:1',
     // Source-quality branch: preserve the configured capture rate and channel count.
@@ -92,8 +95,8 @@ export class CaptureSupervisor extends EventEmitter {
   }
 
   #launch() {
-    this.#base = this.#now();
-    this.#launchedAt = this.#base;
+    this.#base = null;
+    this.#launchedAt = this.#now();
     this.#bytes = 0;
     this.#sourceBytes = 0;
 
@@ -138,6 +141,7 @@ export class CaptureSupervisor extends EventEmitter {
     if (!this.#active) return;
     const sourceBytesPerMs = this.#config.sampleRate * this.#config.channels * 2 / 1000;
     const bytesPerMs = stream === 'source' ? sourceBytesPerMs : BYTES_PER_MS;
+    if (this.#base === null) this.#base = this.#now();
     const startMs = Math.round(this.#base + (stream === 'source' ? this.#sourceBytes : this.#bytes) / bytesPerMs);
     if (stream === 'source') this.#sourceBytes += buf.length;
     else this.#bytes += buf.length;
