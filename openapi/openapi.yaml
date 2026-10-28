@@ -296,6 +296,17 @@ components:
               type:
                 - string
                 - "null"
+        auditorLive:
+          type: object
+          properties:
+            configured:
+              type: boolean
+            running:
+              type: boolean
+            sessionId:
+              type:
+                - string
+                - "null"
         radio:
           $ref: "#/components/schemas/RadioStatus/properties/targets"
         transcription:
