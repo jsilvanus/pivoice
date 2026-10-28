@@ -48,7 +48,8 @@ export class PcmRingBuffer {
         this.#parts.shift();
         this.#bytes -= first.length;
       } else {
-        this.#parts[0] = first.subarray(excess);
+        // Copy the retained suffix so a small view cannot keep the whole old chunk alive.
+        this.#parts[0] = Buffer.from(first.subarray(excess));
         this.#bytes -= excess;
       }
     }
