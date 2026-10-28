@@ -5,12 +5,12 @@ import { fakeSpawn, waitFor } from './helpers.js';
 
 const config = { mode: 'alsa', device: 'hw:1,0', channels: 1, sampleRate: 48000, chunkSeconds: 5, autostart: false };
 
-test('ffmpeg reads the configured ALSA device and writes 16 kHz mono s16le to stdout', () => {
+test('ffmpeg reads ALSA once and fans out analysis PCM plus source-format PCM', () => {
   const args = ffmpegCaptureArgs(config);
   assert.deepEqual(args.slice(args.indexOf('-f'), args.indexOf('-f') + 2), ['-f', 'alsa']);
   assert.equal(args[args.indexOf('-i') + 1], 'hw:1,0');
   assert.equal(args.at(-1), 'pipe:1');
-  assert.equal(args[args.indexOf('-ar') + 1], '16000');
+  assert.equal(args[args.indexOf('-ar') + 1], '16000');\n  assert.equal(args.at(-1), 'pipe:3');\n  assert.ok(args.includes('48000'));\n  assert.ok(args.includes('pipe:1'));
 });
 
 test('PCM from ffmpeg carries wall-clock start times', async () => {
