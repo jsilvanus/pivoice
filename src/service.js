@@ -250,7 +250,7 @@ export class PiVoiceService {
       rmsDbfs: meterFresh ? this.#meter.rmsDbfs : null,
       peakDbfs: meterFresh ? this.#meter.peakDbfs : null,
       classification: !captureRunning ? 'unknown' : (this.#spectral.status.label === 'unknown' ? (this.voice.open ? 'speech' : 'silence') : this.#spectral.status.label),
-      confidence: captureRunning ? this.#spectral.status.confidence : null,
+      confidence: captureRunning && Number.isFinite(this.#spectral.status.confidence) ? Math.round(this.#spectral.status.confidence * 100) : null,
       capture: {
         state: captureStatus.state === 'running' && captureStatus.running
           ? 'running'
