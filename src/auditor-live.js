@@ -97,6 +97,7 @@ export class AuditorLiveClient extends EventEmitter {
         const decoder = new TextDecoder();
         let pending = '';
         let eventName = 'message';
+        let eventId = null;
         let dataLines = [];
         const dispatch = () => {
           if (!dataLines.length) {
@@ -122,6 +123,8 @@ export class AuditorLiveClient extends EventEmitter {
           } catch {
             this.emit('live-event', { type: 'parse-error' });
           }
+          if (eventId !== null) lastEventId = eventId;
+          eventId = null;
           eventName = 'message';
         };
         try {
@@ -134,7 +137,7 @@ export class AuditorLiveClient extends EventEmitter {
               const line = pending.slice(0, newline).replace(/\r$/, '');
               pending = pending.slice(newline + 1);
               if (!line) dispatch();
-              else if (line.startsWith('id:')) lastEventId = line.slice(3).trim();
+              else if (line.startsWith('id:')) eventId = line.slice(3).trim();
               else if (line.startsWith('event:')) eventName = line.slice(6).trim();
               else if (line.startsWith('data:')) dataLines.push(line.slice(5).trimStart());
             }
