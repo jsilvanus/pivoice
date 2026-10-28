@@ -10,6 +10,7 @@ security:
   - bearerAuth: []
 tags:
   - name: system
+  - name: activity
   - name: capture
   - name: radio
   - name: transcription
@@ -148,7 +149,7 @@ paths:
     get:
       operationId: getActivityIdleClose
       tags:
-        - transcription
+        - activity
       summary: Read the live STT/MR idle-close timeout
       responses:
         "200":
@@ -168,7 +169,7 @@ paths:
     put:
       operationId: setActivityIdleClose
       tags:
-        - transcription
+        - activity
       summary: Set the live STT/MR idle-close timeout
       requestBody:
         required: true
@@ -529,6 +530,14 @@ components:
               maximum: 30
             autostart:
               type: boolean
+        activity:
+          type: object
+          properties:
+            idleCloseSeconds:
+              type: integer
+              minimum: 0
+              maximum: 3600
+              description: Shared inactivity timeout for activity-triggered STT/MR sessions; 0 disables automatic close.
         radio:
           type: object
           properties:
