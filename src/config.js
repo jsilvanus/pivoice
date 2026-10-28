@@ -7,6 +7,7 @@ export const REDACTED = '***';
 
 const httpUrl = z.url({ protocol: /^https?$/ });
 const rtmpUrl = z.url({ protocol: /^rtmps?$/ });
+const liveSourceUrl = z.url({ protocol: /^(rtsp|rtsps|srt)$/ });
 const secretText = z.string().trim().min(1).max(500);
 
 const MODE = z.enum(['on', 'off', 'auto']);
@@ -59,6 +60,8 @@ export const configSchema = z.object({
     .object({
       url: httpUrl.nullable().default(null),
       apiKey: secretText.nullable().default(null),
+      liveSourceUrl: liveSourceUrl.nullable().default(null),
+      startWhen: z.enum(['capture_start', 'speech', 'speech_or_music']).default('capture_start'),
       mode: MODE.default('on'),
       language: z.string().regex(/^[a-z]{2,3}(-[a-z0-9]{1,8})*$/).default('fi'),
       timeoutMs: z.number().int().min(1000).max(120000).default(20000),
