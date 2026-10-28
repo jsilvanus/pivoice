@@ -67,6 +67,17 @@ export const commands = [
     "auth": "bearer"
   },
   {
+    "operationId": "getTranscriptionIdleClose",
+    "command": "get-transcription-idle-close",
+    "method": "GET",
+    "path": "/api/v1/transcription/idle-close",
+    "summary": "Read the live STT/MR idle-close timeout",
+    "pathParams": [],
+    "hasBody": false,
+    "streams": false,
+    "auth": "bearer"
+  },
+  {
     "operationId": "listAudioDevices",
     "command": "list-audio-devices",
     "method": "GET",
@@ -74,6 +85,17 @@ export const commands = [
     "summary": "ALSA capture devices (arecord -l), or the simulated source",
     "pathParams": [],
     "hasBody": false,
+    "streams": false,
+    "auth": "bearer"
+  },
+  {
+    "operationId": "setTranscriptionIdleClose",
+    "command": "set-transcription-idle-close",
+    "method": "PUT",
+    "path": "/api/v1/transcription/idle-close",
+    "summary": "Set the live STT/MR idle-close timeout",
+    "pathParams": [],
+    "hasBody": true,
     "streams": false,
     "auth": "bearer"
   },
