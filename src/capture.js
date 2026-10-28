@@ -35,7 +35,8 @@ export class CaptureSupervisor extends EventEmitter {
   #backoffMs;
   #launchedAt = 0;
   #base = 0;
-  #bytes = 0;\n  #sourceBytes = 0;
+  #bytes = 0;
+  #sourceBytes = 0;
   #restarts = 0;
   #lastError = null;
   #stderrLine = '';
@@ -92,7 +93,8 @@ export class CaptureSupervisor extends EventEmitter {
   #launch() {
     this.#base = this.#now();
     this.#launchedAt = this.#base;
-    this.#bytes = 0;\n    this.#sourceBytes = 0;
+    this.#bytes = 0;
+    this.#sourceBytes = 0;
 
     if (this.#config.mode === 'simulated') {
       this.#setState('running');
