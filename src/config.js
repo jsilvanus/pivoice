@@ -63,6 +63,8 @@ export const configSchema = z.object({
       apiKey: secretText.nullable().default(null),
       liveSourceUrl: liveSourceUrl.nullable().default(null),
       startWhen: z.enum(['capture_start', 'speech', 'speech_or_music']).default('capture_start'),
+      /** Stop a speech/music-triggered live session after this many inactive seconds; 0 disables automatic close. */
+      idleCloseSeconds: z.number().int().min(0).max(3600).default(15),
       mode: MODE.default('on'),
       language: z.string().regex(/^[a-z]{2,3}(-[a-z0-9]{1,8})*$/).default('fi'),
       timeoutMs: z.number().int().min(1000).max(120000).default(20000),
