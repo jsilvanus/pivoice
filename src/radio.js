@@ -41,8 +41,10 @@ export class RadioOutputs {
     this.#maxRestartMs = maxRestartMs;
   }
 
-  configure({ targets, bitrate }) {
+  configure({ targets, bitrate, sampleRate = SAMPLE_RATE, channels = CHANNELS }) {
     this.#bitrate = bitrate;
+    this.#sampleRate = sampleRate;
+    this.#channels = channels;
     const wanted = new Map(targets.map((t) => [t.id, t]));
     for (const [id, out] of this.#outputs) {
       const next = wanted.get(id);
