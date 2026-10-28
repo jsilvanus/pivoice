@@ -300,6 +300,22 @@ components:
               type:
                 - string
                 - "null"
+        speechDetection:
+          type: object
+          description: In-process Silero VAD state; unavailable when ONNX Runtime or the model is missing.
+          properties:
+            available:
+              type: boolean
+            ready:
+              type: boolean
+            speaking:
+              type: boolean
+            probability:
+              type: [number, 'null']
+            at:
+              type: [number, 'null']
+            error:
+              type: [string, 'null']
         spectral:
           type: object
           description: Current heuristic PCM spectral classification; not a trained model or calibrated confidence.
