@@ -62,7 +62,8 @@ export class PiVoiceService {
     this.#applyAuditor(cfg);
     this.#buildCaptions(cfg);
 
-    this.capture.on('pcm', ({ pcm, startMs }) => this.#onPcm(pcm, startMs));\n    this.capture.on('source', ({ pcm }) => this.radio.write(pcm));
+    this.capture.on('pcm', ({ pcm, startMs }) => this.#onPcm(pcm, startMs));
+    this.capture.on('source', ({ pcm }) => this.radio.write(pcm));
     this.capture.on('state', (status) => {
       this.#publish('capture', status);
       this.#telemetry?.sendSnapshot();
