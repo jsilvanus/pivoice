@@ -634,7 +634,8 @@ components:
             startWhen:
               type: string
               enum: [capture_start, speech, speech_or_music]
-              description: "Start the pull session on capture start, on energy-gated speech activity, or on speech activity or a frame classified as music by the lightweight spectral heuristic."
+              default: speech_or_music
+              description: "PiGateway owns activity-triggered session starts and idle-close; capture_start is a legacy always-open mode. speech starts on speech only; speech_or_music starts on either classification."
             language:
               type: string
               example: fi
