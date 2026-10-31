@@ -1,7 +1,7 @@
 import { EventEmitter } from 'node:events';
 import { AuditorClient } from './auditor.js';
 import { AuditorLiveClient } from './auditor-live.js';
-import { CaptureSupervisor, listAudioDevices, probeAudio } from './capture.js';
+import { CaptureSupervisor, createSimulatedMixer, getAudioMixer, listAudioDevices, parseCardFromDevice, probeAudio, setAudioMixer } from './capture.js';
 import { RelayCaptions } from './captions/relay.js';
 import { StreamOnlineWatcher } from './captions/stream-status.js';
 import { YouTubeCaptions } from './captions/youtube.js';
@@ -53,6 +53,7 @@ export class PiVoiceService {
   #auditorIdleTimer = null;
   #speechActive = false;
   #musicActive = false;
+  #simulatedMixer = null;
 
   constructor({
     store, spawn, fetchFn = globalThis.fetch, createSender, execFile, now = Date.now,
@@ -73,6 +74,7 @@ export class PiVoiceService {
     this.transcriber = new Transcriber({ now, staleMs });
     this.#chunker = new Chunker({ chunkMs: cfg.capture.chunkSeconds * 1000 });
     this.#preroll = new PcmRingBuffer({ seconds: cfg.activity.prerollSeconds });
+    this.#simulatedMixer = createSimulatedMixer();
 
     this.radio.configure({ targets: cfg.radio.targets, bitrate: cfg.radio.bitrate, sampleRate: cfg.capture.sampleRate, channels: cfg.capture.channels });
     this.#buildVoice(cfg);
@@ -237,6 +239,28 @@ export class PiVoiceService {
 
   listDevices() {
     return listAudioDevices({ mode: this.#store.get().capture.mode, execFile: this.#execFile });
+  }
+
+  getMixer(card) {
+    const targetCard = card || parseCardFromDevice(this.#store.get().capture.device);
+    return getAudioMixer({
+      mode: this.#store.get().capture.mode,
+      card: targetCard,
+      execFile: this.#execFile,
+      simulatedState: this.#simulatedMixer,
+    });
+  }
+
+  setMixer(card, body) {
+    const targetCard = card || body?.card || parseCardFromDevice(this.#store.get().capture.device);
+    const updates = Array.isArray(body?.controls) ? body.controls : [body];
+    return setAudioMixer({
+      mode: this.#store.get().capture.mode,
+      card: targetCard,
+      updates,
+      execFile: this.#execFile,
+      simulatedState: this.#simulatedMixer,
+    });
   }
 
   /** Called after a configuration write. Restarts only what the change touches. */

@@ -6,18 +6,25 @@ import { rms } from './vad.js';
 /** A restart counts as healthy (and resets the backoff) after this long. */
 const STABLE_AFTER_MS = 30_000;
 
-export function ffmpegCaptureArgs({ device, channels, sampleRate }) {
-  return [
+export function ffmpegCaptureArgs({ device, playbackDevice, channels, sampleRate }) {
+  const args = [
     '-hide_banner', '-loglevel', 'warning', '-nostdin',
     // Timestamp ALSA packets against the host wall clock at the capture input.
     // Raw PCM pipes cannot carry packet PTS, so the supervisor maps emitted
     // samples onto this wall-clock-anchored stream timeline.
     '-use_wallclock_as_timestamps', '1', '-f', 'alsa', '-channels', String(channels), '-sample_rate', String(sampleRate), '-i', device,
-    // Analysis branch: fixed 16 kHz mono PCM for metering, VAD and transcription.
-    '-map', '0:a:0', '-ac', String(CHANNELS), '-ar', String(SAMPLE_RATE), '-f', 's16le', 'pipe:1',
-    // Source-quality branch: preserve the configured capture rate and channel count.
-    '-map', '0:a:0', '-ac', String(channels), '-ar', String(sampleRate), '-f', 's16le', 'pipe:3',
+    // Analysis branch: fixed 16 kHz mono PCM for metering, VAD and transcription (left channel only).
+    '-map', '0:a:0', '-af', 'pan=mono|c0=c0', '-ar', String(SAMPLE_RATE), '-f', 's16le', 'pipe:1',
+    // Source-quality branch: preserve the configured capture rate and channel count (left channel only).
+    '-map', '0:a:0', '-af', channels === 1 ? 'pan=mono|c0=c0' : 'pan=stereo|c0=c0|c1=0*c0', '-ar', String(sampleRate), '-f', 's16le', 'pipe:3',
   ];
+  if (playbackDevice) {
+    args.push(
+      // Playback branch: push captured audio back to the ALSA playback device (e.g. Hama headphone output, left only).
+      '-map', '0:a:0', '-af', 'pan=stereo|c0=c0|c1=0*c0', '-ar', String(sampleRate), '-f', 'alsa', playbackDevice,
+    );
+  }
+  return args;
 }
 
 /**
@@ -87,6 +94,7 @@ export class CaptureSupervisor extends EventEmitter {
     return {
       mode: this.#config.mode,
       device: this.#config.mode === 'alsa' ? this.#config.device : 'simulated',
+      playbackDevice: this.#config.mode === 'alsa' ? (this.#config.playbackDevice ?? null) : null,
       running: this.#active,
       state: this.#state,
       restarts: this.#restarts,
@@ -176,7 +184,7 @@ export function probeAudio({ device, channels, sampleRate, durationSeconds = 1, 
     const args = [
       '-hide_banner', '-loglevel', 'error', '-nostdin',
       '-f', 'alsa', '-channels', String(channels), '-sample_rate', String(sampleRate), '-i', device,
-      '-t', String(durationSeconds), '-ac', String(CHANNELS), '-ar', String(SAMPLE_RATE), '-f', 's16le', 'pipe:1',
+      '-t', String(durationSeconds), '-af', 'pan=mono|c0=c0', '-ar', String(SAMPLE_RATE), '-f', 's16le', 'pipe:1',
     ];
     const child = spawn('ffmpeg', args, { stdio: ['ignore', 'pipe', 'pipe'] });
     const chunks = [];
@@ -211,7 +219,7 @@ export function parseArecordList(text) {
 export function listAudioDevices({ mode, execFile = nodeExecFile }) {
   if (mode === 'simulated') {
     return Promise.resolve({
-      devices: [{ id: 'simulated', card: -1, device: -1, cardName: 'Simulated', deviceName: 'Silent test source' }],
+      devices: [{ id: 'simulated', card: -1, device: -1, cardName: 'Simulated', deviceName: 'Silent test source', capture: true, playback: true }],
       error: null,
     });
   }
@@ -221,7 +229,222 @@ export function listAudioDevices({ mode, execFile = nodeExecFile }) {
         resolve({ devices: [], error: err.code === 'ENOENT' ? 'arecord is not installed (alsa-utils)' : 'arecord -l failed' });
         return;
       }
-      resolve({ devices: parseArecordList(String(stdout)), error: null });
+      const captureDevices = parseArecordList(String(stdout));
+      execFile('aplay', ['-l'], { timeout: 5000 }, (aplayErr, aplayStdout) => {
+        if (aplayErr) {
+          resolve({ devices: captureDevices.map((d) => ({ ...d, capture: true, playback: false })), error: null });
+          return;
+        }
+        const playbackDevices = parseArecordList(String(aplayStdout));
+        const map = new Map();
+        for (const d of captureDevices) {
+          map.set(d.id, { ...d, capture: true, playback: false });
+        }
+        for (const p of playbackDevices) {
+          if (map.has(p.id)) {
+            map.get(p.id).playback = true;
+          } else {
+            map.set(p.id, { ...p, capture: false, playback: true });
+          }
+        }
+        resolve({ devices: [...map.values()], error: null });
+      });
     });
+  });
+}
+
+/** Parse ALSA card from device string (e.g. "hw:1,0", "plughw:1,0", "hw:CARD=Device,DEV=0"). */
+export function parseCardFromDevice(device) {
+  if (!device || device === 'default' || device === 'simulated') return 'default';
+  const cardMatch = device.match(/CARD=([^,]+)/i);
+  if (cardMatch) return cardMatch[1];
+  const hwMatch = device.match(/^(?:plug)?hw:([^,]+)/);
+  if (hwMatch) return hwMatch[1];
+  return device;
+}
+
+/** Parses `amixer scontents` output into structured mixer controls. */
+export function parseAmixerScontents(text) {
+  const controls = [];
+  const blocks = text.split(/(?=Simple mixer control )/);
+  for (const block of blocks) {
+    const trimmed = block.trim();
+    if (!trimmed) continue;
+    const headerMatch = trimmed.match(/^Simple mixer control '([^']+)',(\d+)/m);
+    if (!headerMatch) continue;
+    const name = headerMatch[1];
+    const index = Number(headerMatch[2]);
+    const capsMatch = trimmed.match(/Capabilities:\s*(.+)/);
+    const capabilities = capsMatch ? capsMatch[1].trim().split(/\s+/) : [];
+
+    const limitsMatch = trimmed.match(/Limits:(?:\s*\w+)?\s*(\d+)\s*-\s*(\d+)/);
+    const limits = limitsMatch ? { min: Number(limitsMatch[1]), max: Number(limitsMatch[2]) } : null;
+
+    const items = [];
+    for (const line of trimmed.split('\n')) {
+      const lineMatch = line.match(/^\s*(Front Left|Front Right|Mono|Front|Rear|Surround):\s*(.+)$/);
+      if (lineMatch) {
+        const channel = lineMatch[1];
+        const rest = lineMatch[2].trim();
+        if (!rest) continue;
+
+        const rawMatch = rest.match(/(?:Playback|Capture)?\s*(\d+)\b/);
+        const raw = rawMatch ? Number(rawMatch[1]) : null;
+
+        const brackets = [...rest.matchAll(/\[([^\]]+)\]/g)].map((m) => m[1]);
+        let volumePercent = null;
+        let db = null;
+        let switchState = null;
+
+        for (const b of brackets) {
+          if (b.endsWith('%')) volumePercent = Number(b.slice(0, -1));
+          else if (b.endsWith('dB')) db = b;
+          else if (b === 'on') switchState = true;
+          else if (b === 'off') switchState = false;
+        }
+
+        if (raw !== null || volumePercent !== null || db !== null || switchState !== null) {
+          items.push({ channel, raw, volumePercent, db, switch: switchState });
+        }
+      }
+    }
+    controls.push({ name, index, capabilities, limits, items });
+  }
+  return controls;
+}
+
+export function createSimulatedMixer() {
+  return [
+    {
+      name: 'Master',
+      index: 0,
+      capabilities: ['pvolume', 'pswitch', 'pswitch-joined'],
+      limits: { min: 0, max: 64 },
+      items: [
+        { channel: 'Front Left', raw: 48, volumePercent: 75, db: '-6.00dB', switch: true },
+        { channel: 'Front Right', raw: 48, volumePercent: 75, db: '-6.00dB', switch: true },
+      ],
+    },
+    {
+      name: 'Mic',
+      index: 0,
+      capabilities: ['cvolume', 'cswitch', 'cswitch-joined'],
+      limits: { min: 0, max: 64 },
+      items: [
+        { channel: 'Front Left', raw: 10, volumePercent: 15, db: '-24.00dB', switch: true },
+        { channel: 'Front Right', raw: 10, volumePercent: 15, db: '-24.00dB', switch: true },
+      ],
+    },
+    {
+      name: 'Mic Boost',
+      index: 0,
+      capabilities: ['cswitch', 'cswitch-joined'],
+      limits: null,
+      items: [
+        { channel: 'Mono', raw: null, volumePercent: null, db: null, switch: false },
+      ],
+    },
+    {
+      name: 'Capture',
+      index: 0,
+      capabilities: ['cvolume', 'cswitch', 'cswitch-joined'],
+      limits: { min: 0, max: 64 },
+      items: [
+        { channel: 'Front Left', raw: 32, volumePercent: 50, db: '-12.00dB', switch: true },
+        { channel: 'Front Right', raw: 32, volumePercent: 50, db: '-12.00dB', switch: true },
+      ],
+    },
+  ];
+}
+
+export function getAudioMixer({ mode, card = 'default', execFile = nodeExecFile, simulatedState }) {
+  if (mode === 'simulated') {
+    return Promise.resolve({
+      card: String(card),
+      controls: simulatedState || createSimulatedMixer(),
+      error: null,
+    });
+  }
+  return new Promise((resolve) => {
+    const args = ['scontents'];
+    if (card && card !== 'default') {
+      args.unshift('-c', String(card));
+    }
+    execFile('amixer', args, { timeout: 5000 }, (err, stdout) => {
+      if (err) {
+        resolve({
+          card: String(card),
+          controls: [],
+          error: err.code === 'ENOENT' ? 'amixer is not installed (alsa-utils)' : `amixer failed: ${err.message}`,
+        });
+        return;
+      }
+      resolve({ card: String(card), controls: parseAmixerScontents(String(stdout)), error: null });
+    });
+  });
+}
+
+export function setAudioMixer({ mode, card = 'default', updates = [], execFile = nodeExecFile, simulatedState }) {
+  if (mode === 'simulated') {
+    const state = simulatedState || createSimulatedMixer();
+    for (const u of updates) {
+      if (!u || !u.control) continue;
+      const ctrl = state.find((c) => c.name.toLowerCase() === u.control.toLowerCase());
+      if (ctrl) {
+        for (const item of ctrl.items) {
+          if (u.volume !== undefined && u.volume !== null) {
+            const num = typeof u.volume === 'number' ? u.volume : parseInt(u.volume, 10);
+            if (!Number.isNaN(num)) item.volumePercent = Math.min(100, Math.max(0, num));
+          }
+          if (u.switch !== undefined && u.switch !== null) {
+            item.switch = Boolean(u.switch);
+          }
+          if (u.mute !== undefined && u.mute !== null) {
+            item.switch = !u.mute;
+          }
+        }
+      }
+    }
+    return Promise.resolve({ card: String(card), controls: state, error: null });
+  }
+
+  return new Promise((resolve) => {
+    const runUpdate = (index) => {
+      if (index >= updates.length) {
+        getAudioMixer({ mode, card, execFile }).then(resolve);
+        return;
+      }
+      const u = updates[index];
+      if (!u || !u.control) {
+        runUpdate(index + 1);
+        return;
+      }
+      const args = [];
+      if (card && card !== 'default') {
+        args.push('-c', String(card));
+      }
+      args.push('sset', u.control);
+      if (u.volume !== undefined && u.volume !== null) {
+        args.push(typeof u.volume === 'number' ? `${u.volume}%` : String(u.volume));
+      }
+      if (u.switch !== undefined && u.switch !== null) {
+        args.push(u.switch ? 'on' : 'off');
+      }
+      if (u.mute !== undefined && u.mute !== null) {
+        args.push(u.mute ? 'mute' : 'unmute');
+      }
+      execFile('amixer', args, { timeout: 5000 }, (err) => {
+        if (err) {
+          resolve({
+            card: String(card),
+            controls: [],
+            error: err.code === 'ENOENT' ? 'amixer is not installed (alsa-utils)' : `amixer sset failed: ${err.message}`,
+          });
+          return;
+        }
+        runUpdate(index + 1);
+      });
+    };
+    runUpdate(0);
   });
 }

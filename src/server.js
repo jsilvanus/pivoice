@@ -10,6 +10,8 @@ const MAX_BODY_BYTES = 64 * 1024;
 export const ROUTES = {
   'GET /api/v1/status': 'getStatus',
   'GET /api/v1/audio/devices': 'listAudioDevices',
+  'GET /api/v1/audio/mixer': 'getAudioMixer',
+  'PUT /api/v1/audio/mixer': 'setAudioMixer',
   'GET /api/v1/config': 'getConfig',
   'PUT /api/v1/config': 'updateConfig',
   'POST /api/v1/capture/start': 'startCapture',
@@ -44,6 +46,18 @@ export function createServer({ service, store, token = null, allowInsecure = fal
       return { body };
     },
     listAudioDevices: async () => ({ body: await service.listDevices() }),
+    getAudioMixer: async ({ url }) => {
+      const card = url.searchParams.get('card') || undefined;
+      return { body: await service.getMixer(card) };
+    },
+    setAudioMixer: async ({ body, url }) => {
+      if (!body || typeof body !== 'object') throw new HttpError(400, 'invalid_request', 'Body is required');
+      if (!body.control && (!Array.isArray(body.controls) || body.controls.length === 0)) {
+        throw new HttpError(400, 'invalid_request', 'Body must specify control or controls');
+      }
+      const card = url.searchParams.get('card') || body.card || undefined;
+      return { body: await service.setMixer(card, body) };
+    },
     getConfig: () => ({ body: redactConfig(store.get()) }),
     updateConfig: async ({ body }) => {
       const { previous, current } = await store.update(body);
@@ -88,7 +102,7 @@ export function createServer({ service, store, token = null, allowInsecure = fal
 
     try {
       const body = req.method === 'PUT' || req.method === 'POST' ? await readJson(req) : undefined;
-      const result = await handlers[operationId]({ body });
+      const result = await handlers[operationId]({ body, url });
       return sendJson(res, result.status ?? 200, result.body);
     } catch (err) {
       if (err instanceof ZodError) {

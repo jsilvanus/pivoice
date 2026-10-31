@@ -11,6 +11,7 @@ test('defaults are valid and closed (no targets, captions off, no secrets)', () 
   const cfg = base();
   assert.equal(cfg.capture.mode, 'alsa');
   assert.equal(cfg.capture.device, 'default');
+  assert.equal(cfg.capture.playbackDevice, null);
   assert.equal(cfg.capture.policy, 'on');
   assert.equal(cfg.capture.autoPollMode, 'scheduled');
   assert.equal(cfg.capture.autoPollSeconds, 120);

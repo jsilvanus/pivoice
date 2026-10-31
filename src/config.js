@@ -27,6 +27,7 @@ export const configSchema = z.object({
       autoProbeSeconds: z.number().int().min(1).max(5).default(2),
       autoQuietSeconds: z.number().int().min(5).max(600).default(30),
       device: z.string().trim().min(1).max(200).default('default'),
+      playbackDevice: z.string().trim().max(200).nullable().default(null).transform((v) => (v ? v : null)),
       channels: z.union([z.literal(1), z.literal(2)]).default(1),
       sampleRate: z.union([z.literal(44100), z.literal(48000)]).default(48000),
       chunkSeconds: z.number().min(1).max(30).default(5),

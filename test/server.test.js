@@ -10,10 +10,24 @@ let base;
 let service;
 let configFile;
 
+let amixerVolume = 15;
+const execFile = (cmd, args, opts, cb) => {
+  if (cmd === 'amixer') {
+    const isSet = args.includes('sset');
+    if (isSet) {
+      const vArg = args.find((a) => a.endsWith('%'));
+      if (vArg) amixerVolume = parseInt(vArg, 10);
+    }
+    cb(null, `Simple mixer control 'Mic',0\n  Capabilities: cvolume cswitch\n  Capture channels: Front Left\n  Front Left: Capture 10 [${amixerVolume}%] [on]\n`);
+    return;
+  }
+  cb(new Error(`unexpected command ${cmd}`));
+};
+
 before(async () => {
   const { store, dir } = await tempStore({});
   configFile = `${dir}/config.json`;
-  service = new PiVoiceService({ store, spawn: fakeSpawn(), now: () => Date.now() });
+  service = new PiVoiceService({ store, spawn: fakeSpawn(), execFile, now: () => Date.now() });
   server = createServer({ service, store, token: TOKEN });
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
   base = `http://127.0.0.1:${server.address().port}`;
@@ -95,4 +109,30 @@ test('the transcription event stream delivers capture state changes', async () =
   assert.match(text, /event: capture\ndata: \{.*"running":true/);
   controller.abort();
   await fetch(`${base}/api/v1/capture/stop`, { method: 'POST', headers: auth });
+});
+
+test('audio mixer endpoints allow reading and setting ALSA mixer controls', async () => {
+  const getRes = await fetch(`${base}/api/v1/audio/mixer`, { headers: auth });
+  assert.equal(getRes.status, 200);
+  const mixer = await getRes.json();
+  assert.ok(Array.isArray(mixer.controls));
+  const mic = mixer.controls.find((c) => c.name === 'Mic');
+  assert.ok(mic);
+
+  const putRes = await fetch(`${base}/api/v1/audio/mixer`, {
+    method: 'PUT',
+    headers: { ...auth, 'content-type': 'application/json' },
+    body: JSON.stringify({ control: 'Mic', volume: 8 }),
+  });
+  assert.equal(putRes.status, 200);
+  const updated = await putRes.json();
+  const updatedMic = updated.controls.find((c) => c.name === 'Mic');
+  assert.equal(updatedMic.items[0].volumePercent, 8);
+
+  const badRes = await fetch(`${base}/api/v1/audio/mixer`, {
+    method: 'PUT',
+    headers: { ...auth, 'content-type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  assert.equal(badRes.status, 400);
 });

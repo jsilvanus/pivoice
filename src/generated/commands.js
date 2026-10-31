@@ -12,6 +12,17 @@ export const commands = [
     "auth": "bearer"
   },
   {
+    "operationId": "getAudioMixer",
+    "command": "get-audio-mixer",
+    "method": "GET",
+    "path": "/api/v1/audio/mixer",
+    "summary": "ALSA mixer controls and volume levels (amixer scontents)",
+    "pathParams": [],
+    "hasBody": false,
+    "streams": false,
+    "auth": "bearer"
+  },
+  {
     "operationId": "getCaptionsStatus",
     "command": "get-captions-status",
     "method": "GET",
@@ -94,6 +105,17 @@ export const commands = [
     "method": "PUT",
     "path": "/api/v1/activity/idle-close",
     "summary": "Update legacy idle-close setting; PiGateway owns the active timer",
+    "pathParams": [],
+    "hasBody": true,
+    "streams": false,
+    "auth": "bearer"
+  },
+  {
+    "operationId": "setAudioMixer",
+    "command": "set-audio-mixer",
+    "method": "PUT",
+    "path": "/api/v1/audio/mixer",
+    "summary": "Set ALSA mixer controls, volume levels, or mute/switch toggles (amixer sset)",
     "pathParams": [],
     "hasBody": true,
     "streams": false,

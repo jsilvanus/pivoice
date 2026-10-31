@@ -74,6 +74,57 @@ paths:
                 $ref: "#/components/schemas/AudioDevices"
         "401":
           $ref: "#/components/responses/Unauthorized"
+  /api/v1/audio/mixer:
+    get:
+      operationId: getAudioMixer
+      tags:
+        - capture
+      summary: ALSA mixer controls and volume levels (amixer scontents)
+      parameters:
+        - in: query
+          name: card
+          schema:
+            type: string
+          required: false
+          description: ALSA card name or index (defaults to card derived from capture.device)
+      responses:
+        "200":
+          description: Mixer controls
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AudioMixer"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    put:
+      operationId: setAudioMixer
+      tags:
+        - capture
+      summary: Set ALSA mixer controls, volume levels, or mute/switch toggles (amixer sset)
+      parameters:
+        - in: query
+          name: card
+          schema:
+            type: string
+          required: false
+          description: ALSA card name or index (defaults to card derived from capture.device)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AudioMixerUpdate"
+      responses:
+        "200":
+          description: Updated mixer controls
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AudioMixer"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
   /api/v1/config:
     get:
       operationId: getConfig
@@ -410,6 +461,10 @@ components:
               maximum: 600
             device:
               type: string
+            playbackDevice:
+              type:
+                - string
+                - "null"
             running:
               type: boolean
             state:
@@ -540,10 +595,116 @@ components:
                 type: string
               deviceName:
                 type: string
+              capture:
+                type: boolean
+                description: Whether this device supports audio capture
+              playback:
+                type: boolean
+                description: Whether this device supports audio playback
         error:
           type:
             - string
             - "null"
+    AudioMixer:
+      type: object
+      required:
+        - card
+        - controls
+        - error
+      properties:
+        card:
+          type: string
+        controls:
+          type: array
+          items:
+            type: object
+            required:
+              - name
+            properties:
+              name:
+                type: string
+              index:
+                type: integer
+              capabilities:
+                type: array
+                items:
+                  type: string
+              limits:
+                type: object
+                nullable: true
+                properties:
+                  min:
+                    type: integer
+                  max:
+                    type: integer
+              items:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    channel:
+                      type: string
+                    raw:
+                      type:
+                        - integer
+                        - "null"
+                    volumePercent:
+                      type:
+                        - integer
+                        - "null"
+                    db:
+                      type:
+                        - string
+                        - "null"
+                    switch:
+                      type:
+                        - boolean
+                        - "null"
+        error:
+          type:
+            - string
+            - "null"
+    AudioMixerUpdate:
+      type: object
+      properties:
+        card:
+          type: string
+          description: ALSA card index or name
+        control:
+          type: string
+          description: Control name to adjust, e.g. Mic, Mic Boost, Master, Capture
+        volume:
+          oneOf:
+            - type: integer
+              minimum: 0
+              maximum: 100
+            - type: string
+          description: Volume percentage (0-100) or dB value (e.g. 15%, -12dB)
+        switch:
+          type: boolean
+          description: Switch state for toggles (e.g. false to disable Mic Boost)
+        mute:
+          type: boolean
+          description: Convenience flag to mute (true) or unmute (false)
+        controls:
+          type: array
+          items:
+            type: object
+            required:
+              - control
+            properties:
+              control:
+                type: string
+              volume:
+                oneOf:
+                  - type: integer
+                    minimum: 0
+                    maximum: 100
+                  - type: string
+              switch:
+                type: boolean
+              mute:
+                type: boolean
     Config:
       type: object
       description: The configuration as stored (secrets are "***" or null)
@@ -580,6 +741,10 @@ components:
               maximum: 600
             device:
               type: string
+            playbackDevice:
+              type:
+                - string
+                - "null"
             channels:
               type: integer
               enum:
