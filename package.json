@@ -5,6 +5,7 @@
   "type": "module",
   "private": true,
   "license": "UNLICENSED",
+  "packageManager": "pnpm@11.23.0",
   "engines": {
     "node": ">=24"
   },
@@ -23,5 +24,14 @@
     "lcyt": "^3.0.0",
     "yaml": "^2.9.1",
     "zod": "^4.6.7"
+  },
+  "pi": {
+    "service": "pivoice",
+    "displayName": "PiVoice",
+    "layer": "southbound-hardware",
+    "port": 8095,
+    "ports": {},
+    "healthEndpoint": "/health",
+    "envPortVar": "PIVOICE_PORT"
   }
 }

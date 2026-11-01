@@ -7,9 +7,13 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
-COPY package.json package-lock.json ./
-RUN npm ci --omit=dev \
- && npm install --no-save --package-lock=false onnxruntime-node
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+# pnpm has no --no-save: install the optional ONNX runtime, then restore package.json and the lockfile.
+RUN corepack enable \
+ && pnpm install --frozen-lockfile --prod \
+ && cp package.json pnpm-lock.yaml /tmp/ \
+ && pnpm add onnxruntime-node \
+ && cp /tmp/package.json /tmp/pnpm-lock.yaml ./
 COPY scripts/download-silero-model.js ./scripts/download-silero-model.js
 RUN node scripts/download-silero-model.js
 COPY src ./src

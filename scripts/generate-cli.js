@@ -51,7 +51,7 @@ export async function generate({ check = false } = {}) {
   const next = renderModule(buildCommands(spec));
   if (check) {
     const current = await readFile(OUTPUT_FILE, 'utf8').catch(() => '');
-    if (current !== next) throw new Error('src/generated/commands.js is out of date; run npm run generate');
+    if (current !== next) throw new Error('src/generated/commands.js is out of date; run pnpm run generate');
     return false;
   }
   await writeFile(OUTPUT_FILE, next);

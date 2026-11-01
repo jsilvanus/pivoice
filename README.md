@@ -10,7 +10,7 @@ Capture has a policy separate from its input backend: `capture.policy=on` captur
 
 By default, PiVoice uploads analysis chunks to liturgos-auditor's `/inference` endpoint. To let Auditor pull the stream itself, configure `auditor.liveSourceUrl` as the RTSP/SRT URL of the MediaMTX stream reachable from the Auditor host, and `auditor.startWhen` defaults to `capture_start` (continuous ingest while capture runs); it can instead be set to `speech` or `speech_or_music` for activity-triggered sessions. PiVoice then starts a `POST /v1/live` session and consumes its SSE transcript events; it does not upload audio chunks in this mode. Auditor must have live sessions enabled and allow the source host. The `speech` trigger uses Silero VAD when available (otherwise the energy gate); `speech_or_music` starts on Silero speech or a spectral frame classified as music. The music classification remains heuristic and may misclassify some speech, music and ambient noise. Auditor itself performs the live stream's 16 kHz mono S16LE conversion. For activity-triggered live sessions, PiGateway is the authoritative lifecycle owner: it watches PiVoice telemetry, opens the session through PiVoice, and closes it after the gateway's `idleCloseSeconds` timeout (`0` disables automatic close). Configure `PIGATEWAY_PIVOICE_API_URL` and `PIGATEWAY_PIVOICE_API_TOKEN` in PiGateway. PiVoice continuously retains a bounded rolling PCM16 pre-roll (`activity.prerollSeconds`, default 5 seconds), including the wall-clock timestamp of its first retained sample, then submits that snapshot to Auditor as multipart PCM before Auditor processes the live MediaMTX source. Auditor processes pre-roll first, anchors its sample timeline to that capture timestamp, and then continues consuming the live stream; its segmenter/VAD sends speech segments to inference and discards silence. No separate clock-anchor endpoint is needed. The buffer is cleared on capture stop/restart; radio and capture are not routed through PiGateway. The legacy PiVoice idle-close setting remains for compatibility but does not run a local timer.
 
-## Silero VAD setup\n\nInstall the local ONNX Runtime dependency and download the pinned, SHA-256-verified Silero model with `npm run setup:silero`. This is a one-time setup and requires network access; inference itself is offline and runs in the PiVoice process on CPU. The default model path is `models/silero_vad.onnx` (ignored by git); override it with `PIVOICE_SILERO_MODEL_PATH`. If the model or runtime is missing, PiVoice reports the detector as unavailable and falls back to the existing energy gate. The ONNX model is about 2.2 MB; no GPU is required.\n\n## PiGateway telemetry
+## Silero VAD setup\n\nInstall the local ONNX Runtime dependency and download the pinned, SHA-256-verified Silero model with `pnpm run setup:silero`. This is a one-time setup and requires network access; inference itself is offline and runs in the PiVoice process on CPU. The default model path is `models/silero_vad.onnx` (ignored by git); override it with `PIVOICE_SILERO_MODEL_PATH`. If the model or runtime is missing, PiVoice reports the detector as unavailable and falls back to the existing energy gate. The ONNX model is about 2.2 MB; no GPU is required.\n\n## PiGateway telemetry
 
 When `PIVOICE_GATEWAY_HOST` is set, PiVoice sends a 42-byte binary UDP telemetry snapshot to that host while capture is running (every 100 ms), plus a packet when capture state changes. It sends no periodic packets while idle. A type `0x02` message is sent after the PiVoice status/health poll completes. The port is `PIVOICE_GATEWAY_PORT` (default `3101`). Configure the host as the PiGateway LAN IP. This is telemetry only; audio continues to its consumers and is never sent to PiGateway. PiGateway retains the last snapshot and marks it stale after six seconds without a valid packet.
 
@@ -146,7 +146,7 @@ Capture is shared; a radio encoder, auditor or relay failing never restarts capt
 
 ## Tests
 
-`npm test` runs the suite with fakes; it does not require ffmpeg, network or audio hardware.
+`pnpm test` runs the suite with fakes; it does not require ffmpeg, network or audio hardware.
 
 ---
 
@@ -156,4 +156,4 @@ This project is an integral component of the [Pi Production Ecosystem](file:///d
 
 > [!IMPORTANT]
 > Any changes to this repository's architectural role, API routes, communication protocols, exposed ports, dependencies, or runtime status **must be documented in the central `piecosystem` coordination repository** (`docs/projects-catalog.md` and `docs/inter-service-matrix.md`).
-> Always verify cross-system health with `npm run status` in `D:\piecosystem`.
+> Always verify cross-system health with `pnpm run status` in `D:\piecosystem`.
