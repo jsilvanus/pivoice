@@ -28,7 +28,7 @@
   "pi": {
     "service": "pivoice",
     "displayName": "PiVoice",
-    "layer": "southbound-hardware",
+    "layer": "Layer 1: Southbound hardware",
     "port": 3106,
     "ports": {},
     "healthEndpoint": "/health",
