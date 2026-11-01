@@ -1,7 +1,7 @@
 import { createApp } from './app.js';
 
 const host = process.env.PIVOICE_HOST ?? '127.0.0.1';
-const port = Number(process.env.PIVOICE_PORT ?? 8095);
+const port = Number(process.env.PIVOICE_PORT ?? 3106);
 
 const { service, server, store } = await createApp();
 

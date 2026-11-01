@@ -29,7 +29,7 @@
     "service": "pivoice",
     "displayName": "PiVoice",
     "layer": "southbound-hardware",
-    "port": 8095,
+    "port": 3106,
     "ports": {},
     "healthEndpoint": "/health",
     "envPortVar": "PIVOICE_PORT"

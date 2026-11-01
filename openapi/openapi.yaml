@@ -4,7 +4,7 @@ info:
   version: 1.0.0
   description: 'Hama microphone capture (voice activity detection included) on the Pi, audio for web radio, transcription through liturgos-auditor, and caption delivery to the public relay and YouTube. The control API is for the Pi LAN only. Secrets are write-only: they are accepted by PUT /api/v1/config and returned as "***". Web radio and captions are delivered to web-radio-relay (jsilvanus/web-radio-relay).'
 servers:
-  - url: http://127.0.0.1:8095
+  - url: http://127.0.0.1:3106
     description: Default address of a local PiVoice (PIVOICE_HOST / PIVOICE_PORT)
 security:
   - bearerAuth: []

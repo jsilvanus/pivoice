@@ -22,9 +22,9 @@ COPY openapi ./openapi
 
 ENV NODE_ENV=production \
     PIVOICE_HOST=0.0.0.0 \
-    PIVOICE_PORT=8095 \
+    PIVOICE_PORT=3106 \
     PIVOICE_DATA_DIR=/data
 VOLUME ["/data"]
-EXPOSE 8095
+EXPOSE 3106
 USER node
 CMD ["node", "src/main.js"]

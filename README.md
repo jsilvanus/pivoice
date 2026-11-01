@@ -131,7 +131,7 @@ Stored in `$PIVOICE_DATA_DIR/config.json` (mode 0600). Change it with `PUT /api/
 | `PIVOICE_API_TOKEN` | required | Bearer token for `/api/v1` |
 | `PIVOICE_ALLOW_INSECURE` | unset | `1` allows an open server (tests only) |
 | `PIVOICE_HOST` | `127.0.0.1` | HTTP listen address |
-| `PIVOICE_PORT` | `8095` | HTTP port |
+| `PIVOICE_PORT` | `3106` | HTTP port |
 | `PIVOICE_DATA_DIR` | `./data` | Configuration directory |
 | `PIVOICE_GATEWAY_HOST` | unset | PiGateway LAN IP; unset disables UDP telemetry |
 | `PIVOICE_GATEWAY_PORT` | `3101` | PiGateway UDP telemetry port |

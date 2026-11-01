@@ -6,7 +6,7 @@ import { realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { commands } from '../src/generated/commands.js';
 
-const DEFAULT_SERVER = 'http://127.0.0.1:8095';
+const DEFAULT_SERVER = 'http://127.0.0.1:3106';
 
 export function helpText() {
   const lines = [
