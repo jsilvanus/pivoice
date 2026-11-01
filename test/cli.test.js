@@ -30,9 +30,9 @@ test('the CLI sends the bearer token to the chosen server and prints the JSON an
     return new Response(JSON.stringify({ capture: { running: false } }), { status: 200 });
   };
   const out = sink();
-  const code = await run(['get-status', '--server', 'http://pi.lan:8095', '--token', 't0k'], { fetchFn, stdout: out, stderr: sink() });
+  const code = await run(['get-status', '--server', 'http://pi.lan:3106', '--token', 't0k'], { fetchFn, stdout: out, stderr: sink() });
   assert.equal(code, 0);
-  assert.equal(calls[0].url, 'http://pi.lan:8095/api/v1/status');
+  assert.equal(calls[0].url, 'http://pi.lan:3106/api/v1/status');
   assert.equal(calls[0].init.headers.authorization, 'Bearer t0k');
   assert.match(out.text(), /"running": false/);
 });

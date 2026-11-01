@@ -183,7 +183,7 @@ test('activity session forwards delivery options to Auditor', async () => {
   };
   const service = new PiVoiceService({ store, spawn, fetchFn, now: () => NOW });
   service.startCapture();
-  const delivery = { mode: 'push', url: 'https://gateway:3100/api/v1/transcripts', token: 'tok' };
+  const delivery = { mode: 'push', url: 'https://gateway:3000/api/v1/transcripts', token: 'tok' };
   const status = await service.startActivitySession('speech', delivery);
   assert.equal(status.sessionId, 'activity-session-2');
   const request = calls.find((call) => call.url.endsWith('/v1/live'));
