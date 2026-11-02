@@ -5,9 +5,18 @@ import { z } from 'zod';
 /** Written in place of every secret when configuration is read. */
 export const REDACTED = '***';
 
-const httpUrl = z.url({ protocol: /^https?$/ });
-const rtmpUrl = z.url({ protocol: /^rtmps?$/ });
-const liveSourceUrl = z.url({ protocol: /^(rtsp|rtsps|srt)$/ });
+// zod 3 has no protocol-restricted z.url(): parse with URL and check the scheme.
+const urlWithProtocol = (protocol) =>
+  z.string().refine((value) => {
+    try {
+      return protocol.test(new URL(value).protocol.replace(/:$/, ''));
+    } catch {
+      return false;
+    }
+  }, 'Invalid URL');
+const httpUrl = urlWithProtocol(/^https?$/);
+const rtmpUrl = urlWithProtocol(/^rtmps?$/);
+const liveSourceUrl = urlWithProtocol(/^(rtsp|rtsps|srt)$/);
 const secretText = z.string().trim().min(1).max(500);
 
 const MODE = z.enum(['on', 'off', 'auto']);
@@ -33,14 +42,14 @@ export const configSchema = z.object({
       chunkSeconds: z.number().min(1).max(30).default(5),
       autostart: z.boolean().default(false),
     })
-    .prefault({}),
+    .default({}),
   voice: z
     .object({
       thresholdDb: z.number().min(-90).max(-10).default(-45),
       hangoverSeconds: z.number().min(0.5).max(30).default(3),
       prerollSeconds: z.number().min(0).max(5).default(1),
     })
-    .prefault({}),
+    .default({}),
   radio: z
     .object({
       bitrate: z.string().regex(/^\d{2,3}k$/).default('96k'),
@@ -57,13 +66,13 @@ export const configSchema = z.object({
         .max(8)
         .default([]),
     })
-    .prefault({}),
+    .default({}),
   activity: z.object({
     /** PiGateway owns this timeout; 0 disables automatic close. */
     idleCloseSeconds: z.number().int().min(0).max(3600).default(15),
     /** Rolling PCM retained before a gateway-opened STT/MR session. */
     prerollSeconds: z.number().int().min(0).max(30).default(5),
-  }).prefault({}),
+  }).default({}),
   auditor: z
     .object({
       url: httpUrl.nullable().default(null),
@@ -75,7 +84,7 @@ export const configSchema = z.object({
       timeoutMs: z.number().int().min(1000).max(120000).default(20000),
       maxQueue: z.number().int().min(1).max(20).default(3),
     })
-    .prefault({}),
+    .default({}),
   captions: z
     .object({
       relay: z
@@ -85,7 +94,7 @@ export const configSchema = z.object({
           url: httpUrl.nullable().default(null),
           token: secretText.nullable().default(null),
         })
-        .prefault({}),
+        .default({}),
       youtube: z
         .object({
           /** auto = send while the stream is online (see apiKey and videoId). */
@@ -97,9 +106,9 @@ export const configSchema = z.object({
           /** Added to every caption timestamp so captions line up with the YouTube video delay. */
           delayMs: z.number().int().min(0).max(120000).default(0),
         })
-        .prefault({}),
+        .default({}),
     })
-    .prefault({}),
+    .default({}),
 });
 
 /** Secrets: never returned, never logged. Write-only through PUT /config. */
