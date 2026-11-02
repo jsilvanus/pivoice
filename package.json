@@ -23,7 +23,7 @@
   "dependencies": {
     "lcyt": "^3.0.0",
     "yaml": "^2.9.1",
-    "zod": "^4.6.7"
+    "zod": "^3.24.2"
   },
   "pi": {
     "service": "pivoice",
