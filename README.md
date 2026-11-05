@@ -135,6 +135,12 @@ Stored in `$PIVOICE_DATA_DIR/config.json` (mode 0600). Change it with `PUT /api/
 | `PIVOICE_DATA_DIR` | `./data` | Configuration directory |
 | `PIVOICE_GATEWAY_HOST` | unset | PiGateway LAN IP; unset disables UDP telemetry |
 | `PIVOICE_GATEWAY_PORT` | `3101` | PiGateway UDP telemetry port |
+| `PIVOICE_RADIO_RTMP_URL` | unset | Initial radio target RTMP URL (e.g. `rtmp://...:1935/live/keskuskirkko`) |
+| `PIVOICE_RADIO_HLS_URL` | unset | Initial radio target public stream URL |
+| `PIVOICE_RADIO_BITRATE` | `96k` | Initial radio audio bitrate |
+| `PIVOICE_CAPTION_RELAY_URL` | unset | Web radio relay base URL for captions |
+| `PIVOICE_CAPTION_RELAY_TOKEN` | unset | Web radio relay API token |
+| `PIVOICE_CAPTION_RELAY_STREAM` | unset | Web radio relay stream name (default stream if unset) |
 
 ## API
 

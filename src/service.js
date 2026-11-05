@@ -450,6 +450,7 @@ export class PiVoiceService {
     this.#relay = new RelayCaptions({
       url: cfg.captions.relay.url,
       token: cfg.captions.relay.token,
+      stream: cfg.captions.relay.stream,
       fetchFn: this.#fetchFn,
       now: this.#now,
     });

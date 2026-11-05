@@ -95,6 +95,21 @@ test('a batch the relay refuses (400) is dropped so later captions still go out'
   relay.stop();
 });
 
+test('relay posts to stream-specific path when stream is configured', async () => {
+  const posts = [];
+  const fetchFn = async (url, init) => {
+    posts.push({ url, init });
+    return jsonResponse({ ok: true });
+  };
+  const relay = new RelayCaptions({ url: 'https://relay.example', token: 'tok', stream: 'keskuskirkko', fetchFn, now: () => 1000, batchSize: 1, flushMs: 60_000 });
+  relay.start();
+  relay.push(ev(1));
+  await waitFor(() => relay.status().sent === 1);
+  assert.equal(posts[0].url, 'https://relay.example/api/v1/streams/keskuskirkko/captions');
+  assert.equal(relay.status().stream, 'keskuskirkko');
+  relay.stop();
+});
+
 test('an auth failure keeps the batch for retry', async () => {
   const fetchFn = async () => jsonResponse({}, 401);
   const relay = new RelayCaptions({ url: 'https://r', token: 't', fetchFn, now: () => 1000, flushMs: 60_000 });

@@ -829,6 +829,11 @@ components:
                     - string
                     - "null"
                   description: "Secret: the relay RELAY_API_TOKEN"
+                stream:
+                  type:
+                    - string
+                    - "null"
+                  description: "Stream name on the relay (omitted or null = default stream)"
             youtube:
               type: object
               description: YouTube caption delivery. auto = send while the stream is online, checked by polling the YouTube Data API with apiKey and videoId.

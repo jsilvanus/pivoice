@@ -93,6 +93,7 @@ export const configSchema = z.object({
           mode: MODE.default('off'),
           url: httpUrl.nullable().default(null),
           token: secretText.nullable().default(null),
+          stream: z.string().trim().max(64).nullable().default(null),
         })
         .default({}),
       youtube: z

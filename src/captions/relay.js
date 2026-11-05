@@ -11,6 +11,7 @@ const MAX_BATCH = 100;
 export class RelayCaptions {
   #url;
   #token;
+  #stream;
   #fetch;
   #now;
   #batchSize;
@@ -24,11 +25,12 @@ export class RelayCaptions {
   #stats = { sent: 0, failed: 0, dropped: 0, lastError: null, lastSentAt: null };
 
   constructor({
-    url = null, token = null, fetchFn = globalThis.fetch, now = Date.now,
+    url = null, token = null, stream = null, fetchFn = globalThis.fetch, now = Date.now,
     batchSize = 10, flushMs = 1000, maxAgeMs = 60_000, maxBuffer = 500,
   } = {}) {
     this.#url = url ? url.replace(/\/$/, '') : null;
     this.#token = token;
+    this.#stream = stream ? String(stream).trim() : null;
     this.#fetch = fetchFn;
     this.#now = now;
     this.#batchSize = Math.min(batchSize, MAX_BATCH);
@@ -113,13 +115,17 @@ export class RelayCaptions {
       configured: this.configured,
       running: this.#running,
       host: this.#url ? new URL(this.#url).host : null,
+      stream: this.#stream,
       queued: this.#buffer.length,
       ...this.#stats,
     };
   }
 
   async #post(batch) {
-    const res = await this.#fetch(`${this.#url}/api/v1/captions`, {
+    const endpoint = this.#stream
+      ? `${this.#url}/api/v1/streams/${encodeURIComponent(this.#stream)}/captions`
+      : `${this.#url}/api/v1/captions`;
+    const res = await this.#fetch(endpoint, {
       method: 'POST',
       headers: { 'content-type': 'application/json', authorization: `Bearer ${this.#token}` },
       body: JSON.stringify({
