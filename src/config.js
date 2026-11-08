@@ -15,7 +15,7 @@ const urlWithProtocol = (protocol) =>
     }
   }, 'Invalid URL');
 const httpUrl = urlWithProtocol(/^https?$/);
-const rtmpUrl = urlWithProtocol(/^rtmps?$/);
+const rtmpUrl = urlWithProtocol(/^(rtmps?|rtsps?)$/);
 const liveSourceUrl = urlWithProtocol(/^(rtsp|rtsps|srt)$/);
 const secretText = z.string().trim().min(1).max(500);
 
