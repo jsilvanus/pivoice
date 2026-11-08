@@ -157,6 +157,40 @@ test('Auditor pull mode starts on capture start and consumes Auditor-owned RTSP 
   service.stop();
 });
 
+test('Auditor pull mode falls back to push when live session start fails', async () => {
+  const { store } = await tempStore({
+    capture: { mode: 'simulated' },
+    auditor: {
+      url: 'http://auditor:8090',
+      liveSourceUrl: 'rtsp://mediamtx:8554/church',
+      startWhen: 'capture_start',
+      mode: 'on',
+    },
+  });
+  const calls = [];
+  const fetchFn = async (url, init = {}) => {
+    calls.push({ url, init });
+    if (init.method === 'POST' && url.endsWith('/v1/live')) {
+      return jsonResponse({ detail: 'Live sessions are not enabled' }, 503);
+    }
+    if (url.endsWith('/inference')) {
+      return jsonResponse({ language: 'fi', text: 'Fallback push text', segments: [{ start: 0, end: 1, text: 'Fallback push text' }] });
+    }
+    return jsonResponse({});
+  };
+  const service = new PiVoiceService({ store, spawn: fakeSpawn(), fetchFn, now: () => NOW });
+  const events = [];
+  service.subscribe((event) => events.push(event));
+  service.startCapture();
+
+  await waitFor(() => service.status().auditorLive.fallbackActive === true);
+  assert.equal(service.status().transcription.configured, true, 'push mode configured after pull failure');
+  assert.equal(service.status().auditorLive.running, false);
+  assert.ok(events.some((e) => e.type === 'auditor-fallback' && e.data.active === true));
+
+  service.stop();
+});
+
 
 
 test('activity session forwards delivery options to Auditor', async () => {

@@ -525,6 +525,8 @@ components:
               type:
                 - string
                 - "null"
+            fallbackActive:
+              type: boolean
         radio:
           $ref: "#/components/schemas/RadioStatus/properties/targets"
         transcription:

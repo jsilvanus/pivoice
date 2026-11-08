@@ -46,6 +46,9 @@ export class PiVoiceService {
   #youtube = null;
   #telemetry = null;
   #liveAuditor = null;
+  #pushAuditor = null;
+  #liveFallbackActive = false;
+  #liveRetryTimer = null;
   #meter = { rmsDbfs: null, peakDbfs: null, measuredAt: 0 };
   #spectral;
   #silero;
@@ -172,6 +175,8 @@ export class PiVoiceService {
   #stopCaptureNow() {
     this.radio.stop();
     this.capture.stop();
+    clearTimeout(this.#liveRetryTimer);
+    this.#liveRetryTimer = null;
     this.#preroll.clear();
     this.#spectral.reset();
     this.#silero.reset();
@@ -287,7 +292,10 @@ export class PiVoiceService {
       startedAt: new Date(this.#startedAt).toISOString(),
       uptimeSec: Math.round((this.#now() - this.#startedAt) / 1000),
       capture: { ...this.capture.status(), policy: cfg.capture.policy, autoPollMode: cfg.capture.autoPollMode, autoPollSeconds: cfg.capture.autoPollSeconds },
-      auditorLive: this.#liveAuditor?.status() ?? { configured: false, running: false, sessionId: null },
+      auditorLive: {
+        ...(this.#liveAuditor?.status() ?? { configured: false, running: false, sessionId: null }),
+        fallbackActive: this.#liveFallbackActive,
+      },
       preRoll: { durationMs: this.#preroll.durationMs, configuredSeconds: cfg.activity.prerollSeconds },
       voice: { open: this.voice.open, lastVoiceMs: Number.isFinite(this.voice.lastVoiceMs) ? this.voice.lastVoiceMs : null },
       spectral: this.#spectral.status,
@@ -340,6 +348,8 @@ export class PiVoiceService {
     this.#telemetry?.stop();
     clearTimeout(this.#auditorIdleTimer);
     this.#auditorIdleTimer = null;
+    clearTimeout(this.#liveRetryTimer);
+    this.#liveRetryTimer = null;
     this.#silero.close().catch(() => {});
   }
 
@@ -354,6 +364,8 @@ export class PiVoiceService {
   }
 
   #applyAuditor(cfg) {
+    clearTimeout(this.#liveRetryTimer);
+    this.#liveRetryTimer = null;
     this.#liveAuditor?.stop();
     this.#liveAuditor = cfg.auditor.url && cfg.auditor.liveSourceUrl
       ? new AuditorLiveClient({
@@ -364,13 +376,7 @@ export class PiVoiceService {
           fetchFn: this.#fetchFn,
         })
       : null;
-    if (this.#liveAuditor) {
-      this.#liveAuditor.on('transcript', (event) => this.#onTranscript(event));
-      this.#liveAuditor.on('live-event', (event) => this.#publish('auditor-live', event));
-      this.#liveAuditor.on('live-error', (err) => this.#publish('auditor-live', { type: 'error', message: err.message }));
-      this.#liveAuditor.on('status', (status) => this.#publish('auditor-live', { type: 'status', data: status }));
-    }
-    const auditor = cfg.auditor.url && !cfg.auditor.liveSourceUrl
+    this.#pushAuditor = cfg.auditor.url
       ? new AuditorClient({
           url: cfg.auditor.url,
           apiKey: cfg.auditor.apiKey,
@@ -378,7 +384,31 @@ export class PiVoiceService {
           fetchFn: this.#fetchFn,
         })
       : null;
-    this.transcriber.configure({ auditor, language: cfg.auditor.language, maxQueue: cfg.auditor.maxQueue });
+    if (this.#liveAuditor) {
+      this.#liveAuditor.on('transcript', (event) => this.#onTranscript(event));
+      this.#liveAuditor.on('live-event', (event) => this.#publish('auditor-live', event));
+      this.#liveAuditor.on('live-error', (err) => {
+        this.#publish('auditor-live', { type: 'error', message: err.message });
+        if (!this.#liveAuditor?.running) {
+          this.#activatePushFallback(err);
+        }
+      });
+      this.#liveAuditor.on('status', (status) => {
+        this.#publish('auditor-live', { type: 'status', data: status });
+        if (status.running && this.#liveFallbackActive) {
+          this.#liveFallbackActive = false;
+          this.transcriber.configure({ auditor: null, language: cfg.auditor.language, maxQueue: cfg.auditor.maxQueue });
+          this.transcriber.clear();
+          this.#publish('auditor-fallback', { active: false });
+        }
+      });
+      // In pull mode, start with transcriber unconfigured; fallback activates if start fails
+      this.transcriber.configure({ auditor: null, language: cfg.auditor.language, maxQueue: cfg.auditor.maxQueue });
+      this.#liveFallbackActive = false;
+    } else {
+      this.transcriber.configure({ auditor: this.#pushAuditor, language: cfg.auditor.language, maxQueue: cfg.auditor.maxQueue });
+      this.#liveFallbackActive = false;
+    }
     if (this.capture.running) {
       this.#maybeStartAuditorLive(cfg.auditor.startWhen === 'capture_start' ? 'capture_start' : this.#spectral.status.label);
     }
@@ -424,10 +454,41 @@ export class PiVoiceService {
       clearTimeout(this.#auditorIdleTimer);
       this.#auditorIdleTimer = null;
       const preRoll = this.#preroll.snapshotWithTiming();
-      this.#liveAuditor.start({ preRollPcm: preRoll.pcm, preRollStartMs: preRoll.startMs }).catch((err) => {
-        this.#publish('auditor-live', { type: 'error', message: err.message });
-      });
+      this.#liveAuditor.start({ preRollPcm: preRoll.pcm, preRollStartMs: preRoll.startMs })
+        .then((status) => {
+          if (!status.running) this.#activatePushFallback(new Error('Live session was not started'));
+        })
+        .catch((err) => {
+          this.#publish('auditor-live', { type: 'error', message: err.message });
+          this.#activatePushFallback(err);
+        });
     }
+  }
+
+  #activatePushFallback(err) {
+    if (!this.#pushAuditor) return;
+    const cfg = this.#store.get();
+    if (!this.#liveFallbackActive) {
+      this.#liveFallbackActive = true;
+      this.transcriber.configure({
+        auditor: this.#pushAuditor,
+        language: cfg.auditor.language,
+        maxQueue: cfg.auditor.maxQueue,
+      });
+      this.#publish('auditor-fallback', { active: true, reason: err?.message || 'live_error' });
+    }
+    this.#scheduleLiveRetry();
+  }
+
+  #scheduleLiveRetry() {
+    if (this.#liveRetryTimer) return;
+    this.#liveRetryTimer = setTimeout(() => {
+      this.#liveRetryTimer = null;
+      const cfg = this.#store.get();
+      if (this.capture.running && this.#liveAuditor && !this.#liveAuditor.running && cfg.auditor.mode !== 'off') {
+        this.#maybeStartAuditorLive(cfg.auditor.startWhen === 'capture_start' ? 'capture_start' : this.#spectral.status.label);
+      }
+    }, 30000);
   }
 
   #buildCaptions(cfg) {

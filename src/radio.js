@@ -6,11 +6,15 @@ const MAX_BACKLOG_MS = 5000;
 const STABLE_AFTER_MS = 30_000;
 
 export function radioEncoderArgs({ rtmpUrl, bitrate, sampleRate = SAMPLE_RATE, channels = CHANNELS }) {
+  const isRtsp = rtmpUrl.startsWith('rtsp://') || rtmpUrl.startsWith('rtsps://');
+  const formatArgs = isRtsp
+    ? ['-rtsp_transport', 'tcp', '-f', 'rtsp']
+    : ['-f', 'flv'];
   return [
     '-hide_banner', '-loglevel', 'warning', '-nostdin',
     '-f', 's16le', '-ar', String(sampleRate), '-ac', String(channels), '-i', 'pipe:0',
     '-c:a', 'aac', '-b:a', bitrate,
-    '-f', 'flv', rtmpUrl,
+    ...formatArgs, rtmpUrl,
   ];
 }
 

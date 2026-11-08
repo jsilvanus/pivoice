@@ -5,13 +5,19 @@ import { fakeSpawn, waitFor } from './helpers.js';
 
 const target = (over = {}) => ({ id: 'local', name: 'Local', mode: 'on', rtmpUrl: 'rtmp://tuberadio:1935/live/k', hlsUrl: null, ...over });
 
-test('encoder reads raw PCM on stdin and pushes audio-only FLV to RTMP', () => {
+test('encoder reads raw PCM on stdin and pushes audio-only FLV to RTMP or RTSP', () => {
   const args = radioEncoderArgs({ rtmpUrl: 'rtmp://x/live/k', bitrate: '96k' });
   assert.equal(args[args.indexOf('-i') + 1], 'pipe:0');
   assert.equal(args[args.indexOf('-c:a') + 1], 'aac');
   assert.equal(args[args.indexOf('-b:a') + 1], '96k');
   assert.equal(args.at(-1), 'rtmp://x/live/k');
   assert.equal(args.includes('-c:v'), false);
+
+  const rtspArgs = radioEncoderArgs({ rtmpUrl: 'rtsp://x:8554/live/audio', bitrate: '96k' });
+  assert.equal(rtspArgs.at(-1), 'rtsp://x:8554/live/audio');
+  assert.equal(rtspArgs[rtspArgs.indexOf('-f') + 1], 's16le');
+  assert.equal(rtspArgs[rtspArgs.lastIndexOf('-f') + 1], 'rtsp');
+  assert.ok(rtspArgs.includes('-rtsp_transport'));
 });
 
 test('PCM written to the radio reaches every running encoder', () => {
