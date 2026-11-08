@@ -42,3 +42,36 @@ test('503 is retried, and a 422 fails at once', async () => {
   await assert.rejects(bad.transcribe({ pcm, language: 'fi' }), (err) => err instanceof AuditorError && !err.retryable);
   assert.equal(m, 1);
 });
+
+test('falls back to /v1/jobs on HTTP 500 from /inference and prefers jobs thereafter', async () => {
+  const calls = [];
+  const fetchFn = async (url) => {
+    calls.push(url);
+    if (url.endsWith('/inference')) {
+      return jsonResponse({ detail: 'Internal Server Error' }, 500);
+    }
+    if (url.endsWith('/v1/jobs')) {
+      return jsonResponse({ id: 'job-123', status: 'queued' }, 202);
+    }
+    if (url.endsWith('/v1/jobs/job-123')) {
+      return jsonResponse({ id: 'job-123', status: 'completed' }, 200);
+    }
+    if (url.endsWith('/v1/jobs/job-123/result')) {
+      return jsonResponse({ text: 'fallback text', segments: [{ start: 0, end: 2, text: 'fallback text' }] }, 200);
+    }
+    throw new Error(`Unexpected url: ${url}`);
+  };
+
+  const client = new AuditorClient({ url: 'http://a', fetchFn, retryDelayMs: 1, timeoutMs: 2000 });
+  const first = await client.transcribe({ pcm, language: 'fi' });
+  assert.equal(first.segments[0].text, 'fallback text');
+  assert.ok(calls.includes('http://a/inference'));
+  assert.ok(calls.includes('http://a/v1/jobs'));
+
+  // Second call must go straight to /v1/jobs without trying /inference
+  calls.length = 0;
+  const second = await client.transcribe({ pcm, language: 'fi' });
+  assert.equal(second.segments[0].text, 'fallback text');
+  assert.ok(!calls.some((u) => u.endsWith('/inference')));
+  assert.ok(calls.some((u) => u.endsWith('/v1/jobs')));
+});
