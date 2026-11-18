@@ -111,6 +111,8 @@ Sources: `fi`, `en`, `sv` only. Targets: `fi`, `en`, `sv`, `ru`, `uk`, `es`. No 
 
 The source language is the transcript's `language` (from the auditor, default PiVoice `auditor.language`). A transcript whose language is outside the source list is not translated and is counted (`skipped.unsupportedSource`). A configured target equal to the source is skipped silently for that segment (a Swedish reading in a Finnish service with targets `sv,en` yields only `en` for that segment).
 
+Spanish stays in the policy but is left out of the first rollout (Juha, 2026-11-18): phases 1 to 7 build and evaluate `fi`/`en`/`sv`/`ru`/`uk` only; `es` directions are added later with the same checks.
+
 Policy-allowed is not available. A direction is **available** when the fleet reports a worker with capability `translate:<src>-<tgt>` (section 7.2).
 
 The policy lives in one module (`src/translation/policy.js`) with tests, so widening it later is one reviewed change.
@@ -293,7 +295,7 @@ Models are fetched once by a setup script (`fleet/translate/scripts/fetch-models
 ### 7.5 Quality checks
 
 - Invented test sentences in the repo (liturgical register, numbers, Bible references, names of invented people) for unit and smoke tests.
-- A private evaluation set (real service transcripts, outside the repo) scored with chrF per direction, plus a short human read by a speaker of each target language **[J: who reads ru, uk, es]**. A direction is enabled for a real service only after that read.
+- A private evaluation set (real service transcripts, outside the repo) scored with chrF per direction, plus a short human read by a speaker of each target language. Juha has a reader for Russian and Ukrainian; Spanish is not in the first rollout. A direction is enabled for a real service only after that read.
 - The memory (section 5.4) is the first quality tool: fixed texts never go through a model.
 
 ---
@@ -404,7 +406,7 @@ No change needed for the batch design. Possible later, generic: executor-reporte
 | 3 | pivoice | `src/translation/` manager, policy, batcher, memory, fleet client, config, API, SSE event, relay push | live transcript → translated segment on PiVoice SSE and on the relay, end to end on the church LAN |
 | 4 | pigateway | `POST /api/v1/translations`, `TranslationHub`, bus event; pitube contract row | translations on the bus with replay |
 | 5 | web-radio-relay | translation ingest (relay plan phase 8, changed per 10.2) | listener page shows a language choice |
-| 6 | operator PC | remaining directions one by one, private evaluation, human reads | every advertised direction passed its checks |
+| 6 | operator PC | remaining directions one by one (no `es` yet), private evaluation, human reads for ru/uk | every advertised direction passed its checks |
 | 7 | all | operations: PC off/on during a service, fleet restart, queue timeout, 90 min soak | translation degrades to "unavailable" and recovers without touching original captions |
 
 Phases 1 and 2 decide whether the batch design holds (section 6.4). Phase 4 can run in parallel with 3.
@@ -442,7 +444,7 @@ Translation on the Pi; pivot translation; source languages beyond fi/en/sv; lang
 ## 15. Decisions for Juha
 
 1. **Translation engine** [J]: local MT models on the operator PC CPU (recommended), the local LLM through ollama, or a hosted API allowed. This also answers web-radio-relay decision 3.
-2. **Reviewers** [J]: who reads Russian, Ukrainian and Spanish output before a direction is turned on for a real service.
+2. ~~Reviewers~~ Settled 2026-11-18: Juha has a reader for Russian and Ukrainian; Spanish is left out of the first rollout.
 
 Everything else above is a [D] default the implementing threads may follow.
 
