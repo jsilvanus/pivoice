@@ -78,7 +78,7 @@ liturgos-auditor ──final transcripts──► PiVoice ───────�
            ┌───────────────────────────────┼───────────────────────────────┐
            │ route "mt"                    │ route "llm"                   │ route "hosted"
            ▼                               ▼                               ▼
- fffleet orchestrator (Pi :5000)   ollama on the operator PC       hosted MT API (DeepL [D])
+ fffleet orchestrator (Pi :5000)   ollama on the operator PC       hosted MT API (Google [D])
    requires translate:<src>-<tgt>    HTTP /api/chat, LAN only        HTTPS, outbound from the Pi
    workerPreference                  called directly by PiVoice      called directly by PiVoice
      [operator-pc-translate]
@@ -139,7 +139,7 @@ New directory `src/translation/`:
 | `batcher.js` | per-target micro-batches |
 | `routes/mt.js` | route over the `fffleet` client: submit, await, cancel, capabilities poll |
 | `routes/llm.js` | route to ollama `/api/chat`: prompt, glossary, context, JSON answer parsing |
-| `routes/hosted.js` | route to the hosted API (DeepL adapter first), key from env, character budget |
+| `routes/hosted.js` | route to the hosted API (Google adapter first, DeepL second), key from env, character budget |
 | `router.js` | per-direction route chain, availability, fallback (section 5.6) |
 | `manager.js` | `TranslationManager` (EventEmitter): wires the above, deadlines, stats |
 | `result.js` | validation of the worker answer |
@@ -210,7 +210,11 @@ routes:
 
 **llm route details.** ollama listens on localhost on the operator PC today; this route needs it reachable from the Pi only (bind to the LAN address, Windows firewall rule allowing the Pi alone; ollama has no authentication) **[U, deploy step]**. Model from config (`llm.model`, start with the one already pulled; a better multilingual model only if RAM allows). Prompt: system text with the direction, register (church service, spoken), the glossary from the memory file, up to 2 previous source segments as context, and the batch as numbered lines; answer requested as JSON `{"translations":[{"id":0,"text":"..."}]}` with ollama's `format: "json"`, then the same validation as section 6.3. `keep_alive` short, so the model does not hold VRAM STT needs. Concurrency 1. Timeout 8 s.
 
-**hosted route details.** First adapter DeepL API (it covers fi, en, sv, ru, uk, es) [D]; the interface leaves room for another provider. Key in `PIVOICE_TRANSLATE_HOSTED_KEY` only. One request per batch (`text[]`), `source_lang` set explicitly (no auto-detection), optional DeepL glossary built from the memory file. A monthly character budget in config (`hosted.monthlyCharBudget`); at the budget the route reports unavailable. Timeout 5 s, one retry on 429/5xx with back-off within the deadline. The Pi's egress allowlist gains the API host (main plan, "PiVoice egress allowlist").
+**hosted route details.** Google Cloud Translation first, DeepL second (Juha, 2026-11-18). Both cover fi, en, sv, ru, uk, es.
+
+- **Google** [D]: Cloud Translation v2 ("Basic") with an API key: `POST https://translation.googleapis.com/language/translate/v2`, body `{ q: [..batch..], source, target, format: "text" }`, answers keep the order of `q`. The key is restricted in the Google console to the Translation API (and the church's public IP if it is fixed). v3 ("Advanced", service account, glossaries) only if the glossary turns out to matter; the Pi would then sign a service-account JWT with `node:crypto`, no Google SDK.
+- **DeepL** (second adapter, later): `POST /v2/translate`, `text[]`, `source_lang`, optional glossary from the memory file.
+- Common: key in `PIVOICE_TRANSLATE_HOSTED_KEY` only, never in URLs or logs (Google v2 accepts it as `x-goog-api-key` header; use that, not `?key=`). One request per batch, source language always explicit (no auto-detection). A monthly character budget in config (`hosted.monthlyCharBudget`); at the budget the route reports unavailable. Timeout 5 s, one retry on 429/5xx with back-off within the deadline. The Pi's egress allowlist gains the API host (main plan, "PiVoice egress allowlist").
 
 ### 5.7 Translation event
 
@@ -355,8 +359,8 @@ translation:
     keepAlive: 30s
   hosted:              # hosted route
     enabled: false
-    provider: deepl
-    url: https://api.deepl.com    # api-free.deepl.com for a free key
+    provider: google              # google | deepl
+    url: https://translation.googleapis.com
     timeoutMs: 5000
     monthlyCharBudget: 500000
   batch: { windowMs: 300, maxSegments: 8, maxChars: 2000 }
@@ -436,7 +440,7 @@ No change needed for the batch design. Possible later, generic: executor-reporte
 ## 11. Security and privacy
 
 - mt and llm routes stay on the church LAN: PiVoice → orchestrator → worker, and PiVoice → ollama. No inbound internet route.
-- The hosted route sends caption text out of the church (Juha allowed it, 2026-11-18). It is off until `hosted.enabled` and a key are set, outbound HTTPS only, provider and data-processing terms recorded in the parish's processing records (speech in a service can contain names and personal matters). Prefer a provider plan whose terms say texts are not stored or used for training (DeepL API Pro says so; the free API does not promise it) **[U: confirm terms at setup]**.
+- The hosted route sends caption text out of the church (Juha allowed it, 2026-11-18). It is off until `hosted.enabled` and a key are set, outbound HTTPS only, provider and data-processing terms recorded in the parish's processing records (speech in a service can contain names and personal matters). Prefer a provider plan whose terms say texts are not stored or used for training (Google Cloud Translation's terms say customer content is not used to train models; for DeepL only API Pro says so) **[U: confirm terms at setup]**.
 - ollama has no authentication: reachable from the Pi only, by firewall.
 - PiVoice has its own fffleet client with scope `jobs` only.
 - The worker port is LAN-only with a worker token, like the detect worker.
@@ -452,7 +456,7 @@ No change needed for the batch design. Possible later, generic: executor-reporte
 | 1 | pivoice | `fleet/translate` executor + `marian-onnx` engine + entrypoint capability scan + fetch script; tests with a fake engine | one direction (`fi-en`) runs in a local fffleet worker; latency, RSS and load time measured on a dev machine |
 | 2 | piecosystem | `translate-worker` image build and compose service, Pi placement rule | `operator-pc-translate` registers with `translate:fi-en`; measured beside STT + ollama + detect |
 | 3 | pivoice | `src/translation/` manager, policy, batcher, memory, router, mt route, config, API, SSE event, relay push | live transcript → translated segment on PiVoice SSE and on the relay, end to end on the church LAN |
-| 3b | pivoice | hosted route (DeepL adapter, budget) and llm route (ollama), route chains and fallback | operator PC off → hosted takes over within one batch; llm route usable per direction |
+| 3b | pivoice | hosted route (Google adapter, budget; DeepL adapter after it) and llm route (ollama), route chains and fallback | operator PC off → hosted takes over within one batch; llm route usable per direction |
 | 4 | pigateway | `POST /api/v1/translations`, `TranslationHub`, bus event; pitube contract row | translations on the bus with replay |
 | 5 | web-radio-relay | translation ingest (relay plan phase 8, changed per 10.2) | listener page shows a language choice |
 | 6 | operator PC | remaining directions one by one (no `es` yet), private evaluation, human reads for ru/uk | every advertised direction passed its checks |
@@ -469,6 +473,64 @@ Phases 1 and 2 decide whether the batch design holds (section 6.4). Phase 3b nee
 - Never against the real church stream, real YouTube or real transcripts.
 
 ---
+
+## 12a. Work breakdown for Haiku agents
+
+The phases above are PR-sized. Below they are cut into tasks small enough for a Haiku agent: one repository, a few files, a fixed interface, tests that decide done. A coordinating agent (Opus or Sonnet) hands out the tasks, reviews each PR and owns the sync points. Tasks marked **[not Haiku]** need judgement, hardware or the church network and go to a stronger agent or to Juha.
+
+### Rules every task brief carries
+
+- Read only: this plan's sections named in the task, the files listed, and the repo's `README.md`/`CLAUDE.md`. Do not explore other repositories.
+- Node 24 ESM, pnpm, `node --test`, no new runtime dependency unless the task names it.
+- Write the tests first from the task's acceptance list; done = those tests and the repo's existing tests pass, and `pnpm run check:generated` passes when OpenAPI changed.
+- Never log caption text, keys or tokens; every task that handles text adds one test that captures log output and asserts the input sentences are absent.
+- No real transcripts, liturgy texts, names, IPs or model weights in the repo. Invented test data only.
+- One PR per task, on its own branch, title `translation: T<n> <name>`. Do not touch files outside the task's list; if that seems necessary, stop and report.
+- Network calls only through an injected `fetchFn` (or fffleet client) so tests use fakes. No real Google, DeepL, ollama or fleet in tests.
+
+### Tasks
+
+| # | Repo | Task | Files | Needs | Acceptance (tests) |
+|---|---|---|---|---|---|
+| T1 | pivoice | Language policy | `src/translation/policy.js` + test | §4 | allowed table exact; same-language false; `ru` source false; `capability('fi','en') === 'translate:fi-en'`; `es` in policy but `rolloutTargets` excludes it |
+| T2 | pivoice | Text normalisation + translation memory | `src/translation/memory.js` + test, `docs/translations/memory.example.json` (invented) | §5.4 | exact match after case/space/punctuation normalisation; ä/ö/å kept; no fuzzy hit; reload replaces entries; missing file = empty memory, no throw |
+| T3 | pivoice | Batcher | `src/translation/batcher.js` + test | §5.2 steps 4 and 6 | fake clock: flush at `windowMs`, at `maxSegments`, at `maxChars`; bounded queue drops oldest and counts; in-flight limit holds segments |
+| T4 | pivoice | Result validation | `src/translation/result.js` + test | §6.3 | missing id, duplicate id, unknown id, empty text, echo of another segment each rejected; 600-char text cut to 500 and counted |
+| T5 | pivoice | Deadlines and retry rules | `src/translation/deadline.js` + test | §5.3 | past-deadline dropped at each check point; retry allowed only for listed codes and only if deadline allows |
+| T6 | pivoice | Config schema | `src/config.js` (translation block only) + test | §8.1 | defaults as in §8.1; invalid target, invalid route name, chain naming unknown route all rejected; secrets not accepted in config |
+| T7 | pivoice | Hosted route, Google adapter | `src/translation/routes/hosted.js` + test | §5.6 hosted | fake fetch: request body shape, header key not query key, order kept, 429 retry once, 403 marks unavailable, budget reached = unavailable, key absent from errors |
+| T8 | pivoice | llm route (ollama) | `src/translation/routes/llm.js` + test | §5.6 llm | fake fetch: prompt contains direction, context, glossary; JSON answer parsed; non-JSON or wrong ids rejected via T4; `/api/tags` availability; timeout aborts |
+| T9 | pivoice | mt route (fffleet client) | `src/translation/routes/mt.js` + test | §6.1, §6.4 | fffleet client with no URL and a fake `translate` executor (fffleet's documented test pattern): submit shape, `fallback:'none'`, queue-timeout cancel, error code mapping, capability poll |
+| T10 | pivoice | Router | `src/translation/router.js` + test | §5.6 | chain order; first available route taken; failure hands batch to next route within deadline; no route = `skipped.unavailable` |
+| T11 | pivoice | Manager | `src/translation/manager.js` + test | §5.1–5.3, §5.7 | uses T1–T5, T10 with fakes: memory hit skips routes; event shape exact (§5.7); sourceKey rules for both auditor modes; stats counters |
+| T12 | pivoice | Wire into service + API | `src/service.js`, `src/server.js`, `openapi/openapi.yaml`, regenerated CLI, tests | §8.2, §9.1 | manager failure cannot break `#onTranscript` (test throws inside manager); `GET/PUT /api/v1/translation`, `/languages`; SSE `translation` event; relay push with `lang` |
+| T13 | pivoice | Worker executor (fake engine) | `fleet/translate/executor.js`, `fleet/translate/package.json`, test | §6, §7.3 | payload validation, limits, error codes, `rt.signal` cancel between segments, LRU of loaded engines with a fake engine, no text in errors |
+| T14 | pivoice | marian-onnx engine | `fleet/translate/engines/marian-onnx.js` + optional test | §7.4 | adds `@huggingface/transformers`; test skipped unless `PIVOICE_TRANSLATE_MODEL_DIR` set; unit test of manifest parsing without a model |
+| T15 | pivoice | Capability scan entrypoint | `fleet/translate/entrypoint.mjs` + test | §7.2 | fake engine: passing entries become `FFFLEET_CAPABILITIES`; failing ones left out and reported; empty manifest starts with none |
+| T16 | pigateway | Translation ingest + hub | `src/transcripts/translation-hub.ts`, route in `src/app.ts`, tests | §10.1 | validation like TranscriptHub; dedup on (sourceKey, lang); `sourceId` resolved when the transcript is in the ring; bus event id `<epoch>:t<seq>`; replay |
+| T17 | pitube | Contract row | `CONTRACT.md` | §10.1 | one table row; pitube ignores `translation` |
+| T18 | pivoice | Gateway publisher | `src/translation/gateway-publisher.js` + test | §9.2 | batched POST like `RelayCaptions`, bounded buffer, stale drop, token not in status |
+| T19 | pivoice | Model fetch script **[not Haiku]** | `fleet/translate/scripts/fetch-models.mjs` | §7.4 | model export and quantisation need trial and error |
+| T20 | piecosystem | Worker image + compose + placement **[not Haiku]** | Containerfile, compose, `fffleet.yaml` rule | §7.1, §10.3 | deploy-adjacent, operator PC limits |
+| T21 | — | Measurements and evaluation **[not Haiku]** | — | §6.4, §7.4, §7.5 | on real hardware with real audio; human reads |
+| T22 | pivoice | DeepL adapter | `src/translation/routes/hosted-deepl.js` + test | §5.6 hosted | same acceptance as T7 against DeepL's shape |
+| T23 | web-radio-relay | Translation ingest **[after the relay thread agrees, §10.2]** | per relay plan phase 7 code | §10.2 | relay maps `translation` bus events to timeline events |
+
+### Order and sync points
+
+```
+Wave 1 (parallel): T1 T2 T3 T4 T5 T6 T13 T17
+Wave 2 (parallel): T7 T8 T9 T15 T16        needs T1, T4, T6 (T15 needs T13)
+Wave 3:            T10 T18                  needs T7 T8 T9
+Wave 4:            T11                      needs T2 T3 T5 T10
+Wave 5:            T12                      needs T11, T18
+Separate track:    T14 → T19 → T20 → T21    stronger agent, hardware
+Later:             T22, T23
+```
+
+Sync points the coordinating agent checks before the next wave: (1) after wave 1, the shapes in T1/T4/T6 match §5.7 and §6 exactly; (2) after wave 3, one fake end-to-end test (transcript in, translation event out, through router and all three fake routes); (3) after wave 5, the existing PiVoice tests still pass unchanged and the original caption path has no new awaits.
+
+With only waves 1 to 5 done, the hosted route already translates live captions end to end; the mt route switches on when T20 is deployed, with no PiVoice change.
 
 ## 13. Risks
 
