@@ -199,13 +199,13 @@ Per direction a **chain** in config, tried in order; the first available route t
 
 ```yaml
 routes:
-  default: [mt, hosted]
+  default: [mt]
   fi-uk: [mt, llm, hosted]
 ```
 
 - `memory` is always first and is not part of the chain.
 - A route can be left out of every chain to switch it off. With no `hosted` key or `hosted.enabled: false`, the hosted route is never available, so nothing leaves the church by accident.
-- Default chain `[mt, hosted]` [D]: local first, hosted when the operator PC is off or the worker fails. The `llm` route is opt-in per direction until its quality is measured (section 7.5).
+- Default chain `[mt]` while only local mode exists (Juha, 2026-11-18: local first). Once the hosted route is built, the suggested chain is `[mt, hosted]`: local first, hosted when the operator PC is off or the worker fails. The `llm` route is opt-in per direction until its quality is measured (section 7.5).
 - One route per batch: no mixing of routes inside one batch, so the event's `route`/`model` is exact.
 
 **llm route details.** ollama listens on localhost on the operator PC today; this route needs it reachable from the Pi only (bind to the LAN address, Windows firewall rule allowing the Pi alone; ollama has no authentication) **[U, deploy step]**. Model from config (`llm.model`, start with the one already pulled; a better multilingual model only if RAM allows). Prompt: system text with the direction, register (church service, spoken), the glossary from the memory file, up to 2 previous source segments as context, and the batch as numbered lines; answer requested as JSON `{"translations":[{"id":0,"text":"..."}]}` with ollama's `format: "json"`, then the same validation as section 6.3. `keep_alive` short, so the model does not hold VRAM STT needs. Concurrency 1. Timeout 8 s.
@@ -347,7 +347,7 @@ translation:
   targets: [en]        # subset of the policy targets
   memoryPath: null
   routes:
-    default: [mt, hosted]
+    default: [mt]       # [mt, hosted] once the hosted route exists
     # fi-uk: [mt, llm, hosted]
   fleet:               # mt route
     url: null          # PIVOICE_FFFLEET_URL, e.g. http://127.0.0.1:5000
@@ -455,14 +455,15 @@ No change needed for the batch design. Possible later, generic: executor-reporte
 | 0 | pivoice | This plan | merged |
 | 1 | pivoice | `fleet/translate` executor + `marian-onnx` engine + entrypoint capability scan + fetch script; tests with a fake engine | one direction (`fi-en`) runs in a local fffleet worker; latency, RSS and load time measured on a dev machine |
 | 2 | piecosystem | `translate-worker` image build and compose service, Pi placement rule | `operator-pc-translate` registers with `translate:fi-en`; measured beside STT + ollama + detect |
-| 3 | pivoice | `src/translation/` manager, policy, batcher, memory, router, mt route, config, API, SSE event, relay push | live transcript → translated segment on PiVoice SSE and on the relay, end to end on the church LAN |
-| 3b | pivoice | hosted route (Google adapter, budget; DeepL adapter after it) and llm route (ollama), route chains and fallback | operator PC off → hosted takes over within one batch; llm route usable per direction |
-| 4 | pigateway | `POST /api/v1/translations`, `TranslationHub`, bus event; pitube contract row | translations on the bus with replay |
-| 5 | web-radio-relay | translation ingest (relay plan phase 8, changed per 10.2) | listener page shows a language choice |
-| 6 | operator PC | remaining directions one by one (no `es` yet), private evaluation, human reads for ru/uk | every advertised direction passed its checks |
-| 7 | all | operations: PC off/on during a service, fleet restart, queue timeout, 90 min soak | translation degrades to "unavailable" and recovers without touching original captions |
+| 3 | pivoice | `src/translation/` manager, policy, batcher, memory, router, **mt route only**, config, API, SSE event, relay push | live transcript → translated segment on PiVoice SSE and on the relay, end to end on the church LAN, fully local |
+| 4 | operator PC | remaining local directions one by one (no `es` yet), private evaluation, human reads for ru/uk | every advertised mt direction passed its checks |
+| 5 | all | local operations: PC off/on during a service, fleet restart, queue timeout, 90 min soak | **local mode done**: translation degrades to "unavailable" and recovers without touching original captions |
+| 6 | pigateway | `POST /api/v1/translations`, `TranslationHub`, bus event; pitube contract row | translations on the bus with replay |
+| 7 | web-radio-relay | translation ingest (relay plan phase 8, changed per 10.2) | listener page shows a language choice |
+| 8 | pivoice | llm route (ollama, direct) | llm usable per direction; compared with mt on the evaluation set |
+| 9 | pivoice | hosted route (Google adapter, budget; DeepL after it), chain fallback | operator PC off → hosted takes over within one batch |
 
-Phases 1 and 2 decide whether the batch design holds (section 6.4). Phase 3b needs no worker and can start in parallel with 1; with only the hosted route it already gives a working translation path. Phase 4 can run in parallel with 3. Phase 6 also compares mt, llm and hosted per direction on the private evaluation set and sets each direction's chain from that.
+Local mode first (Juha, 2026-11-18): phases 1 to 5 use only the mt route and nothing leaves the church. Phases 1 and 2 decide whether the batch design holds (section 6.4). Phases 6 and 7 can run in parallel with 4 and 5. Phase 8 is the second local route; phase 9 comes last and then compares mt, llm and hosted per direction on the private evaluation set to set each direction's chain.
 
 ### Tests
 
@@ -501,9 +502,9 @@ The phases above are PR-sized. Below they are cut into tasks small enough for a 
 | T7 | pivoice | Hosted route, Google adapter | `src/translation/routes/hosted.js` + test | §5.6 hosted | fake fetch: request body shape, header key not query key, order kept, 429 retry once, 403 marks unavailable, budget reached = unavailable, key absent from errors |
 | T8 | pivoice | llm route (ollama) | `src/translation/routes/llm.js` + test | §5.6 llm | fake fetch: prompt contains direction, context, glossary; JSON answer parsed; non-JSON or wrong ids rejected via T4; `/api/tags` availability; timeout aborts |
 | T9 | pivoice | mt route (fffleet client) | `src/translation/routes/mt.js` + test | §6.1, §6.4 | fffleet client with no URL and a fake `translate` executor (fffleet's documented test pattern): submit shape, `fallback:'none'`, queue-timeout cancel, error code mapping, capability poll |
-| T10 | pivoice | Router | `src/translation/router.js` + test | §5.6 | chain order; first available route taken; failure hands batch to next route within deadline; no route = `skipped.unavailable` |
+| T10 | pivoice | Router | `src/translation/router.js` + test | §5.6 | works with any subset of routes registered (fake routes in tests); chain order; first available route taken; failure hands batch to next route within deadline; no route = `skipped.unavailable` |
 | T11 | pivoice | Manager | `src/translation/manager.js` + test | §5.1–5.3, §5.7 | uses T1–T5, T10 with fakes: memory hit skips routes; event shape exact (§5.7); sourceKey rules for both auditor modes; stats counters |
-| T12 | pivoice | Wire into service + API | `src/service.js`, `src/server.js`, `openapi/openapi.yaml`, regenerated CLI, tests | §8.2, §9.1 | manager failure cannot break `#onTranscript` (test throws inside manager); `GET/PUT /api/v1/translation`, `/languages`; SSE `translation` event; relay push with `lang` |
+| T12 | pivoice | Wire into service + API (mt route only) | `src/service.js`, `src/server.js`, `openapi/openapi.yaml`, regenerated CLI, tests | §8.2, §9.1 | manager failure cannot break `#onTranscript` (test throws inside manager); `GET/PUT /api/v1/translation`, `/languages`; SSE `translation` event; relay push with `lang` |
 | T13 | pivoice | Worker executor (fake engine) | `fleet/translate/executor.js`, `fleet/translate/package.json`, test | §6, §7.3 | payload validation, limits, error codes, `rt.signal` cancel between segments, LRU of loaded engines with a fake engine, no text in errors |
 | T14 | pivoice | marian-onnx engine | `fleet/translate/engines/marian-onnx.js` + optional test | §7.4 | adds `@huggingface/transformers`; test skipped unless `PIVOICE_TRANSLATE_MODEL_DIR` set; unit test of manifest parsing without a model |
 | T15 | pivoice | Capability scan entrypoint | `fleet/translate/entrypoint.mjs` + test | §7.2 | fake engine: passing entries become `FFFLEET_CAPABILITIES`; failing ones left out and reported; empty manifest starts with none |
@@ -519,18 +520,22 @@ The phases above are PR-sized. Below they are cut into tasks small enough for a 
 ### Order and sync points
 
 ```
-Wave 1 (parallel): T1 T2 T3 T4 T5 T6 T13 T17
-Wave 2 (parallel): T7 T8 T9 T15 T16        needs T1, T4, T6 (T15 needs T13)
-Wave 3:            T10 T18                  needs T7 T8 T9
-Wave 4:            T11                      needs T2 T3 T5 T10
-Wave 5:            T12                      needs T11, T18
-Separate track:    T14 → T19 → T20 → T21    stronger agent, hardware
-Later:             T22, T23
+Local mode first:
+Wave 1 (parallel): T1 T2 T3 T4 T5 T6 T13           + track A starts: T14 → T19
+Wave 2 (parallel): T9 T15 T10                       needs T1 T4 T6 (T15 needs T13; T10 with mt only)
+Wave 3:            T11                              needs T2 T3 T5 T9 T10
+Wave 4:            T12                              needs T11
+Track A (stronger agent, hardware): T14 → T19 → T20 → T21, T20 before wave 4 ends
+  → local mode works end to end on the church LAN
+
+Then:
+Wave 5 (parallel): T16 T17 T18 T8                   gateway bus, llm route
+Wave 6:            T7, then T22, T23                hosted route (Google, then DeepL), relay ingest
 ```
 
-Sync points the coordinating agent checks before the next wave: (1) after wave 1, the shapes in T1/T4/T6 match §5.7 and §6 exactly; (2) after wave 3, one fake end-to-end test (transcript in, translation event out, through router and all three fake routes); (3) after wave 5, the existing PiVoice tests still pass unchanged and the original caption path has no new awaits.
+Sync points the coordinating agent checks before the next wave: (1) after wave 1, the shapes in T1/T4/T6 match §5.7 and §6 exactly; (2) after wave 3, one fake end-to-end test (transcript in, translation event out, through the router and the fake mt route); (3) after wave 4, the existing PiVoice tests still pass unchanged and the original caption path has no new awaits; (4) after wave 6, the fake end-to-end test runs through all three routes and the fallback.
 
-With only waves 1 to 5 done, the hosted route already translates live captions end to end; the mt route switches on when T20 is deployed, with no PiVoice change.
+T10 (router) is built in wave 2 with only the mt route registered, so adding llm and hosted later is a registration, not a router change. T12 does not depend on T18: the gateway publisher plugs in in wave 5.
 
 ## 13. Risks
 
