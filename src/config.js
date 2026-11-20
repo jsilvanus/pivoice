@@ -77,6 +77,7 @@ export const configSchema = z.object({
     .object({
       url: httpUrl.nullable().default(null),
       apiKey: secretText.nullable().default(null),
+      liveMode: z.enum(['auto', 'push', 'pull', 'chunked']).default('auto'),
       liveSourceUrl: liveSourceUrl.nullable().default(null),
       startWhen: z.enum(['capture_start', 'speech', 'speech_or_music']).default('capture_start'),
       mode: MODE.default('on'),

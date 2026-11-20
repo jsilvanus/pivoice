@@ -1,10 +1,11 @@
 import { EventEmitter } from 'node:events';
 
-/** Controls an Auditor pull-mode live session; audio is pulled by Auditor from MediaMTX. */
+/** Controls an Auditor live session (direct 16 kHz mono s16le PCM push or RTSP/SRT pull). */
 export class AuditorLiveClient extends EventEmitter {
   #baseUrl;
   #apiKey;
   #source;
+  #inputMode;
   #language;
   #fetch;
   #sessionId = null;
@@ -12,18 +13,26 @@ export class AuditorLiveClient extends EventEmitter {
   #stopping = false;
   #generation = 0;
   #startPromise = null;
+  #pcmQueue = [];
+  #pcmPumping = false;
+  #maxQueuedChunks = 64;
 
-  constructor({ url, apiKey, source, language = 'fi', fetchFn = globalThis.fetch }) {
+  constructor({ url, apiKey, source = null, inputMode = null, language = 'fi', fetchFn = globalThis.fetch }) {
     super();
     this.#baseUrl = url.replace(/\/$/, '');
     this.#apiKey = apiKey;
     this.#source = source;
+    this.#inputMode = inputMode || (source ? 'pull' : 'push');
     this.#language = language;
     this.#fetch = fetchFn;
   }
 
+  get inputMode() { return this.#inputMode; }
   get running() { return this.#sessionId !== null && !this.#stopping; }
-  status() { return { configured: Boolean(this.#baseUrl && this.#source), running: this.running, sessionId: this.#sessionId }; }
+  status() {
+    const configured = Boolean(this.#baseUrl && (this.#inputMode === 'push' || this.#source));
+    return { configured, running: this.running, sessionId: this.#sessionId, inputMode: this.#inputMode };
+  }
 
   async start(options = {}) {
     if (this.running) return this.status();
@@ -40,8 +49,15 @@ export class AuditorLiveClient extends EventEmitter {
   }
 
   async #startSession({ preRollPcm = null, preRollStartMs = null, delivery = null } = {}, generation) {
-    if (!this.#baseUrl || !this.#source) throw new Error('Auditor live source URL is not configured');
-    const metadata = { source: this.#source, language: this.#language, client_ref: 'pivoice-main', ...(delivery ? { delivery } : {}) };
+    if (!this.#baseUrl || (this.#inputMode === 'pull' && !this.#source)) {
+      throw new Error('Auditor live source URL is not configured');
+    }
+    const metadata = {
+      ...(this.#inputMode === 'push' ? { input_mode: 'push', source: 'pcm://push' } : { source: this.#source }),
+      language: this.#language,
+      client_ref: 'pivoice-main',
+      ...(delivery ? { delivery } : {}),
+    };
     let request;
     if (Buffer.isBuffer(preRollPcm) && preRollPcm.length > 0) {
       const form = new FormData();
@@ -93,7 +109,15 @@ export class AuditorLiveClient extends EventEmitter {
     this.#controller?.abort();
     this.#controller = null;
     this.#sessionId = null;
+    this.#pcmQueue = [];
     try {
+      if (this.#inputMode === 'push') {
+        await this.#fetch(`${this.#baseUrl}/v1/live/${encodeURIComponent(id)}/audio`, {
+          method: 'POST',
+          headers: this.#headers({ 'content-type': 'application/octet-stream', 'x-eof': '1' }),
+          body: new Uint8Array(0),
+        }).catch(() => {});
+      }
       await this.#fetch(`${this.#baseUrl}/v1/live/${encodeURIComponent(id)}`, {
         method: 'DELETE',
         headers: this.#headers(),
@@ -103,6 +127,40 @@ export class AuditorLiveClient extends EventEmitter {
     }
     this.emit('status', this.status());
     return this.status();
+  }
+
+  /** Pushes raw 16 kHz mono s16le PCM bytes to an active push-mode live session. */
+  pushPcm(pcm) {
+    if (this.#inputMode !== 'push' || !this.running || !Buffer.isBuffer(pcm) || pcm.length === 0) return;
+    if (this.#pcmQueue.length >= this.#maxQueuedChunks) {
+      this.#pcmQueue.shift();
+    }
+    this.#pcmQueue.push(pcm);
+    void this.#pumpPcm();
+  }
+
+  async #pumpPcm() {
+    if (this.#pcmPumping) return;
+    this.#pcmPumping = true;
+    try {
+      while (this.#pcmQueue.length > 0 && this.running) {
+        const id = this.#sessionId;
+        const chunk = this.#pcmQueue.shift();
+        if (!id || !chunk) break;
+        const res = await this.#fetch(`${this.#baseUrl}/v1/live/${encodeURIComponent(id)}/audio`, {
+          method: 'POST',
+          headers: this.#headers({ 'content-type': 'application/octet-stream' }),
+          body: chunk,
+        });
+        if (!res.ok) {
+          throw new Error(`Auditor live audio push failed (HTTP ${res.status})`);
+        }
+      }
+    } catch (err) {
+      if (!this.#stopping) this.emit('live-error', err);
+    } finally {
+      this.#pcmPumping = false;
+    }
   }
 
   #headers(extra = {}) {
