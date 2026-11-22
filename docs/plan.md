@@ -107,6 +107,9 @@ All operational routes are under `/api/v1`; `/health` and `/ready` are unversion
 | GET | `/api/v1/transcription/events` | SSE transcript and transcription-status events |
 | GET | `/api/v1/radio` | Browser-facing radio URLs and readiness |
 | GET | `/api/v1/captions/status` | Caption sender status, without secrets |
+| GET | `/api/v1/translation` | Caption translation state per target and route, never text (docs/translations/plan.md) |
+| PUT | `/api/v1/translation` | Mode, targets, route chains, hosted on/off, reload the translation memory |
+| GET | `/api/v1/translation/languages` | Language policy and directions available now |
 | POST | `/api/v1/captions/start` | Start caption delivery |
 | POST | `/api/v1/captions/stop` | Stop caption delivery |
 

@@ -15,6 +15,7 @@ tags:
   - name: radio
   - name: transcription
   - name: captions
+  - name: translation
 paths:
   /health:
     get:
@@ -324,7 +325,7 @@ paths:
       operationId: streamTranscriptionEvents
       tags:
         - transcription
-      summary: Server-sent events; "transcript", "capture" and "transcription" events
+      summary: Server-sent events; "transcript", "translation", "capture" and "transcription" events
       responses:
         "200":
           description: Event stream
@@ -332,7 +333,7 @@ paths:
             text/event-stream:
               schema:
                 type: string
-                description: 'Each event is "event: <type>" and "data: <JSON>". transcript data: seq, chunkSeq, startMs, endMs (epoch milliseconds), text, language.'
+                description: 'Each event is "event: <type>" and "data: <JSON>". transcript data: seq, chunkSeq, startMs, endMs (epoch milliseconds), text, language. translation data: sourceKey, sourceSeq, session, source, lang, text, startMs, endMs, origin (model or memory), route, model, latencyMs.'
         "401":
           $ref: "#/components/responses/Unauthorized"
   /api/v1/radio:
@@ -363,6 +364,62 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CaptionsStatus"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /api/v1/translation:
+    get:
+      operationId: getTranslation
+      tags:
+        - translation
+      summary: Caption translation state, per target and route (never caption text)
+      responses:
+        "200":
+          description: Translation state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TranslationStatus"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    put:
+      operationId: updateTranslation
+      tags:
+        - translation
+      summary: Change translation mode, targets or route chains; reload the translation memory
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TranslationUpdate"
+      responses:
+        "200":
+          description: Translation state after the change
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TranslationStatus"
+        "400":
+          description: Invalid request or a direction the language policy does not allow
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /api/v1/translation/languages:
+    get:
+      operationId: getTranslationLanguages
+      tags:
+        - translation
+      summary: Language policy and which directions are available now
+      responses:
+        "200":
+          description: Policy table
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TranslationLanguages"
         "401":
           $ref: "#/components/responses/Unauthorized"
 components:
@@ -566,6 +623,8 @@ components:
               description: "on: always. auto: only while speech is detected (VAD). off: never."
         captions:
           $ref: "#/components/schemas/CaptionsStatus"
+        translation:
+          $ref: "#/components/schemas/TranslationStatus"
         voice:
           type: object
           properties:
@@ -881,7 +940,7 @@ components:
           properties:
             mode:
               type: string
-              enum: [off, on, auto]
+              enum: ["off", "on", "auto"]
             targets:
               type: array
               items:
@@ -974,6 +1033,137 @@ components:
               dropped:
                 type: integer
               mode: *a1
+    TranslationTargetStatus:
+      type: object
+      properties:
+        available:
+          type: boolean
+        sent:
+          type: integer
+        fromMemory:
+          type: integer
+        failed:
+          type: integer
+        truncated:
+          type: integer
+        dropped:
+          type: object
+          properties:
+            late:
+              type: integer
+            unavailable:
+              type: integer
+            queueFull:
+              type: integer
+        route:
+          type:
+            - string
+            - "null"
+        model:
+          type:
+            - string
+            - "null"
+        lastError:
+          type:
+            - string
+            - "null"
+        latencyMs:
+          type: object
+          properties:
+            p50:
+              type:
+                - number
+                - "null"
+            p95:
+              type:
+                - number
+                - "null"
+    TranslationStatus:
+      type: object
+      required:
+        - mode
+        - targets
+        - running
+      properties:
+        mode:
+          type: string
+          enum: ["off", "on", "auto"]
+        targets:
+          type: array
+          items:
+            type: string
+        running:
+          type: boolean
+        routes:
+          type: object
+          additionalProperties:
+            type: object
+        perTarget:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/TranslationTargetStatus"
+        skipped:
+          type: object
+          properties:
+            unsupportedSource:
+              type: integer
+            unavailable:
+              type: integer
+        memory:
+          type:
+            - object
+            - "null"
+    TranslationUpdate:
+      type: object
+      additionalProperties: false
+      properties:
+        mode:
+          type: string
+          enum: ["off", "on", "auto"]
+        targets:
+          type: array
+          items:
+            type: string
+        routes:
+          type: object
+          description: Route chains per direction ("fi-en") or "default"; route names mt, llm, hosted.
+          additionalProperties:
+            type: array
+            items:
+              type: string
+              enum: [mt, llm, hosted]
+        hostedEnabled:
+          type: boolean
+        reloadMemory:
+          type: boolean
+    TranslationLanguages:
+      type: object
+      properties:
+        sources:
+          type: array
+          items:
+            type: string
+        targets:
+          type: array
+          items:
+            type: string
+        rolloutTargets:
+          type: array
+          items:
+            type: string
+        directions:
+          type: array
+          items:
+            type: object
+            properties:
+              source:
+                type: string
+              target:
+                type: string
+              configured:
+                type: boolean
+              available:
+                type: boolean
     CaptionsStatus:
       type: object
       required:

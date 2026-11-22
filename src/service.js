@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import { AuditorClient } from './auditor.js';
 import { AuditorLiveClient } from './auditor-live.js';
@@ -13,6 +14,8 @@ import { VoiceGate } from './vad.js';
 import { SpectralClassifier } from './spectral.js';
 import { SileroVad } from './silero-vad.js';
 import { PiVoiceTelemetryPublisher } from './telemetry.js';
+import { createTranslation } from './translation/index.js';
+import { allowedDirections, baseLanguage, ROLLOUT_TARGETS, SOURCE_LANGUAGES, TARGET_LANGUAGES } from './translation/policy.js';
 
 export class ServiceError extends Error {
   constructor(status, code, message) {
@@ -58,10 +61,14 @@ export class PiVoiceService {
   #speechActive = false;
   #musicActive = false;
   #simulatedMixer = null;
+  #createTranslation;
+  #translation = null;
+  #uploadSession = `pivoice-${randomUUID().slice(0, 8)}`;
 
   constructor({
     store, spawn, fetchFn = globalThis.fetch, createSender, execFile, now = Date.now,
     minRestartMs, maxRestartMs, staleMs, telemetryHost, telemetryPort = 3101,
+    createTranslationFn = createTranslation,
     vadOnDemand = !['0', 'off', 'false', 'no'].includes(String(process.env.PIVOICE_VAD_ON_DEMAND ?? '1').trim().toLowerCase()),
   }) {
     this.#vadOnDemand = Boolean(vadOnDemand);
@@ -72,6 +79,7 @@ export class PiVoiceService {
     this.#createSender = createSender;
     this.#execFile = execFile;
     this.#spawn = spawn;
+    this.#createTranslation = createTranslationFn;
     this.#hub.setMaxListeners(0);
 
     const cfg = store.get();
@@ -109,6 +117,7 @@ export class PiVoiceService {
     this.#sileroInit = this.#silero.initialize();
     this.#applyAuditor(cfg);
     this.#buildCaptions(cfg);
+    this.#buildTranslation(cfg);
 
     this.capture.on('pcm', ({ pcm, startMs }) => this.#onPcm(pcm, startMs));
     this.capture.on('source', ({ pcm }) => this.radio.write(pcm));
@@ -163,6 +172,7 @@ export class PiVoiceService {
 
   /** Explicit operator start; overrides auto polling until explicitly stopped. */
   startCapture() {
+    this.#uploadSession = `pivoice-${randomUUID().slice(0, 8)}`;
     clearTimeout(this.#autoTimer);
     this.#autoTimer = null;
     this.#autoCaptureStartedAt = null;
@@ -292,6 +302,8 @@ export class PiVoiceService {
     this.#syncSilero();
     if (changed('activity')) this.#preroll.configureSeconds(next.activity.prerollSeconds);
     if (changed('captions')) this.#buildCaptions(next);
+    if (changed('translation')) this.#buildTranslation(next);
+    else this.#syncTranslation();
   }
 
   status() {
@@ -311,6 +323,7 @@ export class PiVoiceService {
       radio: this.radio.status(),
       transcription: { mode: cfg.auditor.mode, ...this.transcriber.status() },
       captions: this.captionsStatus(),
+      translation: this.translationStatus(),
     };
   }
 
@@ -352,6 +365,7 @@ export class PiVoiceService {
     this.#stream.stop();
     this.#relay.stop();
     this.#youtube.stop();
+    this.#translation?.manager.stop();
     this.stopCapture();
     this.#telemetry?.stop();
     clearTimeout(this.#auditorIdleTimer);
@@ -549,6 +563,7 @@ export class PiVoiceService {
     } catch {
       // Not configured: the status shows it (configured: false). Nothing to recover from here.
     }
+    this.#syncTranslation();
   }
 
   // YouTube "auto" means the stream is online, as reported by the stream watcher (polling the YouTube Data API).
@@ -618,6 +633,98 @@ export class PiVoiceService {
     const mode = this.#store.get().captions.relay.mode;
     if (mode === 'on' || (mode === 'auto' && this.voice.lastVoiceMs >= event.startMs)) this.#relay.push(event);
     if (this.#youtubeWanted()) this.#youtube.push(event);
+    this.#translate(event);
+  }
+
+  // After the original captions, synchronously and guarded: translation never delays or breaks them.
+  #translate(event) {
+    const manager = this.#translation?.manager;
+    if (!manager?.running) return;
+    try {
+      // Live modes key on the auditor session (the pair pigateway de-duplicates on); upload mode on a
+      // random id per capture start (plan §5.1).
+      const live = this.#liveAuditor?.running ? this.#liveAuditor.status().sessionId : null;
+      manager.handle(event, { session: live ?? this.#uploadSession });
+    } catch {
+      // The manager already swallows its own errors; this is a second fence.
+    }
+  }
+
+  /** Rebuilds the translation stack after its config changed. Off = nothing built, no timers. */
+  #buildTranslation(cfg) {
+    this.#translation?.manager.stop();
+    this.#translation?.manager.removeAllListeners();
+    this.#translation = null;
+    if (cfg.translation.mode === 'off') return;
+    try {
+      this.#translation = this.#createTranslation({ config: () => this.#store.get().translation, fetchFn: this.#fetchFn });
+    } catch (err) {
+      console.error('pivoice: translation could not be set up:', err.message);
+      return;
+    }
+    const { manager, memory } = this.#translation;
+    manager.on('translation', (event) => this.#onTranslation(event));
+    manager.on('error', () => {});
+    memory?.reload().catch(() => {});
+    this.#syncTranslation();
+  }
+
+  // "auto" = while any caption output runs (plan §8.1).
+  #translationWanted() {
+    const mode = this.#store.get().translation.mode;
+    if (mode === 'on') return true;
+    if (mode !== 'auto' || !this.#relay) return false;
+    return Boolean(this.#relay.status().running || this.#youtube?.status().running);
+  }
+
+  #syncTranslation() {
+    const manager = this.#translation?.manager;
+    if (!manager) return;
+    if (this.#translationWanted()) manager.start();
+    else manager.stop();
+  }
+
+  #onTranslation(event) {
+    const publish = this.#store.get().translation.publish;
+    if (publish.events) this.#publish('translation', event);
+    if (publish.relay && this.#store.get().captions.relay.mode !== 'off') {
+      // The relay takes translations as ordinary segments with their own language (plan §9.1).
+      this.#relay.push({ seq: event.sourceSeq, language: event.lang, text: event.text, startMs: event.startMs, endMs: event.endMs });
+    }
+  }
+
+  /** GET /api/v1/translation: counts, routes and availability, never caption text. */
+  translationStatus() {
+    const cfg = this.#store.get();
+    const manager = this.#translation?.manager;
+    const base = { mode: cfg.translation.mode, targets: cfg.translation.targets, running: false, routes: {}, perTarget: {}, skipped: { unsupportedSource: 0, unavailable: 0 }, memory: null };
+    if (!manager) return base;
+    const s = manager.status({ source: baseLanguage(cfg.auditor.language) });
+    return { ...base, running: s.running, routes: s.routes, perTarget: s.targets, skipped: s.skipped, memory: s.memory };
+  }
+
+  /** GET /api/v1/translation/languages: the policy table and what can run now. */
+  translationLanguages() {
+    const cfg = this.#store.get();
+    const manager = this.#translation?.manager;
+    return {
+      sources: [...SOURCE_LANGUAGES],
+      targets: [...TARGET_LANGUAGES],
+      rolloutTargets: [...ROLLOUT_TARGETS],
+      directions: allowedDirections().map(({ source, target }) => ({
+        source,
+        target,
+        configured: cfg.translation.targets.includes(target),
+        available: manager ? Boolean(manager.availability(source)[target]) : false,
+      })),
+    };
+  }
+
+  /** PUT /api/v1/translation with reloadMemory: re-reads the memory file. */
+  async reloadTranslationMemory() {
+    const memory = this.#translation?.memory;
+    if (!memory) return null;
+    return memory.reload();
   }
 
   #publish(type, data) {
