@@ -264,3 +264,32 @@ test('activity session sends timed pre-roll and reports its byte count', async (
   assert.equal(metadata.preroll_start_ms, NOW);
   service.stop();
 });
+
+test('Auditor liveMode=push pipes capture PCM directly to /v1/live/{id}/audio without RTSP', async () => {
+  const { store } = await tempStore({
+    capture: { mode: 'alsa', device: 'hw:1,0' },
+    auditor: { url: 'http://auditor:8090', liveMode: 'push', language: 'fi', startWhen: 'capture_start' },
+  });
+  const spawn = fakeSpawn();
+  const calls = [];
+  const fetchFn = async (url, init = {}) => {
+    calls.push({ url, init });
+    if (init.method === 'POST' && url.endsWith('/v1/live')) return jsonResponse({ id: 'live-push-1' }, 202);
+    if (url.endsWith('/events')) return new Response('', { headers: { 'content-type': 'text/event-stream' } });
+    if (url.endsWith('/audio')) return jsonResponse({ accepted_bytes: init.body?.length ?? 0 });
+    return jsonResponse({});
+  };
+  const service = new PiVoiceService({ store, spawn, fetchFn, now: () => NOW });
+  service.startCapture();
+  await waitFor(() => service.status().auditorLive.running);
+
+  const ffmpeg = spawn.children[0];
+  const pcm = Buffer.alloc(1600, 7);
+  ffmpeg.stdout.write(pcm);
+  await waitFor(() => calls.some((c) => c.url.endsWith('/v1/live/live-push-1/audio')));
+
+  const audioCall = calls.find((c) => c.url.endsWith('/v1/live/live-push-1/audio'));
+  assert.ok(audioCall);
+  assert.equal(audioCall.init.body.length, 1600);
+  service.stop();
+});

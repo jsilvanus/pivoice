@@ -367,11 +367,16 @@ export class PiVoiceService {
     clearTimeout(this.#liveRetryTimer);
     this.#liveRetryTimer = null;
     this.#liveAuditor?.stop();
-    this.#liveAuditor = cfg.auditor.url && cfg.auditor.liveSourceUrl
+    const liveMode = cfg.auditor.liveMode ?? 'auto';
+    const useLivePush = Boolean(cfg.auditor.url && liveMode === 'push');
+    const useLivePull = Boolean(cfg.auditor.url && cfg.auditor.liveSourceUrl && (liveMode === 'pull' || liveMode === 'auto'));
+    const useLive = useLivePush || useLivePull;
+    this.#liveAuditor = useLive
       ? new AuditorLiveClient({
           url: cfg.auditor.url,
           apiKey: cfg.auditor.apiKey,
-          source: cfg.auditor.liveSourceUrl,
+          source: useLivePush ? null : cfg.auditor.liveSourceUrl,
+          inputMode: useLivePush ? 'push' : 'pull',
           language: cfg.auditor.language,
           fetchFn: this.#fetchFn,
         })
@@ -551,6 +556,9 @@ export class PiVoiceService {
     this.#spectral.push(pcm, endMs);
     this.#silero.push(pcm, endMs);
     this.voice.push(pcm, startMs);
+    if (this.#liveAuditor?.running && this.#liveAuditor.inputMode === 'push') {
+      this.#liveAuditor.pushPcm(pcm);
+    }
     const captureCfg = this.#store.get().capture;
     if (captureCfg.policy === 'auto' && this.#autoCaptureStartedAt !== null) {
       const lastSoundAt = Number.isFinite(this.voice.lastVoiceMs) && this.voice.lastVoiceMs >= this.#autoCaptureStartedAt

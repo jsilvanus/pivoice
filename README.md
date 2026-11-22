@@ -12,7 +12,7 @@ By default, PiVoice uploads analysis chunks to liturgos-auditor's `/inference` e
 
 ## Silero VAD setup\n\nInstall the local ONNX Runtime dependency and download the pinned, SHA-256-verified Silero model with `pnpm run setup:silero`. This is a one-time setup and requires network access; inference itself is offline and runs in the PiVoice process on CPU. The default model path is `models/silero_vad.onnx` (ignored by git); override it with `PIVOICE_SILERO_MODEL_PATH`. If the model or runtime is missing, PiVoice reports the detector as unavailable and falls back to the existing energy gate. The ONNX model is about 2.2 MB; no GPU is required.\n\n## PiGateway telemetry
 
-When `PIVOICE_GATEWAY_HOST` is set, PiVoice sends a 42-byte binary UDP telemetry snapshot to that host while capture is running (every 100 ms), plus a packet when capture state changes. It sends no periodic packets while idle. A type `0x02` message is sent after the PiVoice status/health poll completes. The port is `PIVOICE_GATEWAY_PORT` (default `3101`). Configure the host as the PiGateway LAN IP. This is telemetry only; audio continues to its consumers and is never sent to PiGateway. PiGateway retains the last snapshot and marks it stale after six seconds without a valid packet.
+When `PIVOICE_GATEWAY_HOST` is set, PiVoice sends a 42-byte binary UDP telemetry snapshot to that host while capture is running (every 250 ms by default, `PIVOICE_TELEMETRY_INTERVAL_MS`), plus a packet when capture state changes. It sends no periodic packets while idle. A type `0x02` message is sent after the PiVoice status/health poll completes. The port is `PIVOICE_GATEWAY_PORT` (default `3101`). Configure the host as the PiGateway LAN IP. This is telemetry only; audio continues to its consumers and is never sent to PiGateway. PiGateway retains the last snapshot and marks it stale after six seconds without a valid packet.
 
 The [shared protocol specification](docs/pivoice-telemetry.md) is also recorded in PiGateway.
 
@@ -135,6 +135,9 @@ Stored in `$PIVOICE_DATA_DIR/config.json` (mode 0600). Change it with `PUT /api/
 | `PIVOICE_DATA_DIR` | `./data` | Configuration directory |
 | `PIVOICE_GATEWAY_HOST` | unset | PiGateway LAN IP; unset disables UDP telemetry |
 | `PIVOICE_GATEWAY_PORT` | `3101` | PiGateway UDP telemetry port |
+| `PIVOICE_TELEMETRY_INTERVAL_MS` | `250` | UDP snapshot period while capturing (20-2000; PiGateway marks stale after 6000 ms) |
+| `PIVOICE_STATUS_HZ` | `5` | Max rate of per-frame Silero VAD status events (changes of speech state or probability bucket are always immediate) |
+| `PIVOICE_SPECTRAL_EVERY` | `4` | Run the spectral FFT on every Nth loud frame (1 = every frame); silence and sudden zero-crossing changes are still handled per frame |
 | `PIVOICE_RADIO_RTMP_URL` | unset | Initial radio target RTMP URL (e.g. `rtmp://...:1935/live/keskuskirkko`) |
 | `PIVOICE_RADIO_HLS_URL` | unset | Initial radio target public stream URL |
 | `PIVOICE_RADIO_BITRATE` | `96k` | Initial radio audio bitrate |
