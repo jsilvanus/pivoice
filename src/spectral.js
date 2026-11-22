@@ -2,6 +2,12 @@ import { EventEmitter } from 'node:events';
 
 const FRAME_SIZE = 512;
 const EPS = 1e-12;
+const ZCR_RECOMPUTE_DELTA = 0.05;
+
+function positiveInt(value, fallback) {
+  const n = Math.floor(Number(value));
+  return Number.isFinite(n) && n >= 1 ? n : fallback;
+}
 
 /** Lightweight PCM16 spectral heuristic. Not a trained speech/music model. */
 export class SpectralClassifier extends EventEmitter {
@@ -11,9 +17,18 @@ export class SpectralClassifier extends EventEmitter {
   #flatnessThreshold;
   #zcrThreshold;
   #current = { label: 'unknown', confidence: null, features: null, at: null };
+  #every;
+  #sinceFft = 0;
+  #fftZcr = null;
 
-  constructor({ sampleRate = 16000, silenceDbfs = -55, flatnessThreshold = 0.4, zcrThreshold = 0.15 } = {}) {
+  /**
+   * The FFT runs on every `fftEvery`th loud frame (default env PIVOICE_SPECTRAL_EVERY or 4);
+   * the cheap RMS/silence check runs on every frame, and a loud frame is also analysed at once
+   * when the previous label was silence/unknown or its zero-crossing rate moved noticeably.
+   */
+  constructor({ sampleRate = 16000, silenceDbfs = -55, flatnessThreshold = 0.4, zcrThreshold = 0.15, fftEvery = positiveInt(process.env.PIVOICE_SPECTRAL_EVERY, 4) } = {}) {
     super();
+    this.#every = positiveInt(fftEvery, 4);
     this.#sampleRate = sampleRate;
     this.#silenceRms = 32768 * 10 ** (silenceDbfs / 20);
     this.#flatnessThreshold = flatnessThreshold;
@@ -27,6 +42,8 @@ export class SpectralClassifier extends EventEmitter {
   reset() {
     this.#pending = Buffer.alloc(0);
     this.#current = { label: 'unknown', confidence: null, features: null, at: null };
+    this.#sinceFft = 0;
+    this.#fftZcr = null;
   }
 
   push(pcm, endMs = Date.now()) {
@@ -53,12 +70,25 @@ export class SpectralClassifier extends EventEmitter {
       sumSquares += value * value;
       if (i && ((value >= 0) !== (frame.readInt16LE((i - 1) * 2) >= 0))) crossings++;
     }
+    const zcrNow = crossings / (n - 1);
     const rms = Math.sqrt(sumSquares / n);
     const rmsDbfs = rms <= 0 ? -120 : 20 * Math.log10(rms / 32768);
     if (rms < this.#silenceRms) {
+      this.#sinceFft = 0;
+      this.#fftZcr = null;
       this.#set({ label: 'silence', confidence: 1, features: { rmsDbfs, flatness: null, zcr: null, centroidHz: null }, at });
       return;
     }
+
+    const held = this.#current.label === 'speech' || this.#current.label === 'music';
+    if (held && ++this.#sinceFft < this.#every && Math.abs(zcrNow - this.#fftZcr) <= ZCR_RECOMPUTE_DELTA) {
+      // Keep the last classification; only refresh the cheap features and the timestamp (no event).
+      const f = this.#current.features;
+      this.#current = { ...this.#current, features: { ...f, rmsDbfs, zcr: zcrNow }, at };
+      return;
+    }
+    this.#sinceFft = 0;
+    this.#fftZcr = zcrNow;
 
     // Hann-windowed radix-2 FFT. Only the non-negative half-spectrum is needed.
     const re = new Float64Array(n);
@@ -107,7 +137,7 @@ export class SpectralClassifier extends EventEmitter {
       if (hz < 300) low += mag;
     }
     const flatness = sumMag > 0 ? Math.exp(logSum / (bins - 1)) / (sumMag / (bins - 1)) : 0;
-    const zcr = crossings / (n - 1);
+    const zcr = zcrNow;
     const centroidHz = total ? weighted / total : 0;
     const flatnessMusic = flatness <= this.#flatnessThreshold;
     const zcrMusic = zcr <= this.#zcrThreshold;
