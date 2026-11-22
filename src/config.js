@@ -1,6 +1,7 @@
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { z } from 'zod';
+import { ROUTE_NAMES, translationSchema } from './translation/config.js';
 
 /** Written in place of every secret when configuration is read. */
 export const REDACTED = '***';
@@ -111,7 +112,11 @@ export const configSchema = z.object({
         .default({}),
     })
     .default({}),
+  /** Caption translation (docs/translations/plan.md). Secrets come from the environment only. */
+  translation: translationSchema.default({}),
 });
+
+export { ROUTE_NAMES };
 
 /** Secrets: never returned, never logged. Write-only through PUT /config. */
 const SECRET_FIELDS = [
