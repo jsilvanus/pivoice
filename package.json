@@ -21,6 +21,7 @@
     "test": "node --test"
   },
   "dependencies": {
+    "fffleet": "^2.8.0",
     "lcyt": "^3.0.0",
     "yaml": "^2.9.1",
     "zod": "^3.24.2"
