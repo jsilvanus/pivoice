@@ -6,7 +6,7 @@ This is the shared PiVoice → PiGateway wire contract. Keep the protocol defini
 
 - UDP, default destination port **3101**.
 - Fixed **42-byte** packet: 20-byte header + 22-byte snapshot payload.
-- Type `0x01`: telemetry snapshot, sent every 100 ms only while capture is running, and on capture state transitions (including the final stopped state).
+- Type `0x01`: telemetry snapshot, sent every 250 ms by default (`PIVOICE_TELEMETRY_INTERVAL_MS`) only while capture is running, and on capture state transitions (including the final stopped state).
 - Type `0x02`: health/status poll completed. PiVoice sends this after its status endpoint has completed the poll, including a full current snapshot.
 - No idle periodic packets, retransmissions, JSON or audio payload.
 - A valid packet refreshes PiGateway's TTL. The gateway retains the latest snapshot and sets `stale: true` after **6 seconds** without a valid packet; it does not erase the last values.

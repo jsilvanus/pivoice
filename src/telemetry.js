@@ -2,6 +2,13 @@ import dgram from 'node:dgram';
 
 export const PIVOICE_UDP_PORT = 3101;
 export const PIVOICE_PACKET_BYTES = 42;
+/** Default snapshot period while capturing; PiGateway marks PiVoice stale after 6000 ms, so keep this far below that. */
+export const DEFAULT_TELEMETRY_INTERVAL_MS = 250;
+
+export function telemetryIntervalFromEnv(env = process.env) {
+  const n = Number(env.PIVOICE_TELEMETRY_INTERVAL_MS);
+  return Number.isFinite(n) && n >= 20 && n <= 2000 ? Math.round(n) : DEFAULT_TELEMETRY_INTERVAL_MS;
+}
 const HEADER_BYTES = 20;
 const PAYLOAD_BYTES = 22;
 const UNAVAILABLE_DBFS = -2147483648;
@@ -53,9 +60,11 @@ export class PiVoiceTelemetryPublisher {
   #timer = null;
   #sequence = 0;
   #closed = false;
+  #intervalMs;
 
-  constructor({ host, port = PIVOICE_UDP_PORT, snapshot, now = Date.now, socketFactory = () => dgram.createSocket('udp4') }) {
+  constructor({ host, port = PIVOICE_UDP_PORT, snapshot, now = Date.now, intervalMs = telemetryIntervalFromEnv(), socketFactory = () => dgram.createSocket('udp4') }) {
     if (!host) throw new Error('PiVoice telemetry host is required');
+    this.#intervalMs = intervalMs;
     this.#host = host;
     this.#port = port;
     this.#snapshot = snapshot;
@@ -70,7 +79,7 @@ export class PiVoiceTelemetryPublisher {
       if (this.#snapshot()?.capture?.state !== 'running') return;
       this.sendSnapshot();
     };
-    this.#timer = setInterval(sendWhileCapturing, 100);
+    this.#timer = setInterval(sendWhileCapturing, this.#intervalMs);
     this.#timer.unref?.();
   }
 
