@@ -23,7 +23,12 @@ export const ROUTES = {
   'POST /api/v1/activity/session/stop': 'stopActivitySession',
   'GET /api/v1/radio': 'getRadio',
   'GET /api/v1/captions/status': 'getCaptionsStatus',
+  'GET /api/v1/translation': 'getTranslation',
+  'PUT /api/v1/translation': 'updateTranslation',
+  'GET /api/v1/translation/languages': 'getTranslationLanguages',
 };
+
+const TRANSLATION_PUT_KEYS = new Set(['mode', 'targets', 'routes', 'hostedEnabled', 'reloadMemory']);
 
 const digest = (value) => createHash('sha256').update(value).digest();
 
@@ -85,6 +90,24 @@ export function createServer({ service, store, token = null, allowInsecure = fal
     },
     getRadio: () => ({ body: { targets: service.radio.status() } }),
     getCaptionsStatus: () => ({ body: service.captionsStatus() }),
+    getTranslation: () => ({ body: service.translationStatus() }),
+    getTranslationLanguages: () => ({ body: service.translationLanguages() }),
+    updateTranslation: async ({ body }) => {
+      if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).some((key) => !TRANSLATION_PUT_KEYS.has(key))) {
+        throw new HttpError(400, 'invalid_request', 'Body may contain only mode, targets, routes, hostedEnabled and reloadMemory');
+      }
+      const patch = {};
+      if (body.mode !== undefined) patch.mode = body.mode;
+      if (body.targets !== undefined) patch.targets = body.targets;
+      if (body.routes !== undefined) patch.routes = body.routes;
+      if (body.hostedEnabled !== undefined) patch.hosted = { enabled: body.hostedEnabled };
+      if (Object.keys(patch).length > 0) {
+        const { previous, current } = await store.update({ translation: patch });
+        service.applyConfig(previous, current);
+      }
+      if (body.reloadMemory === true) await service.reloadTranslationMemory();
+      return { body: service.translationStatus() };
+    },
   };
 
   async function handle(req, res) {

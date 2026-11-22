@@ -136,3 +136,24 @@ test('audio mixer endpoints allow reading and setting ALSA mixer controls', asyn
   });
   assert.equal(badRes.status, 400);
 });
+
+test('translation routes: status, validated update and the language table', async () => {
+  let res = await fetch(`${base}/api/v1/translation`, { headers: auth });
+  assert.equal(res.status, 200);
+  assert.equal((await res.json()).mode, 'off');
+
+  const put = (body) => fetch(`${base}/api/v1/translation`, { method: 'PUT', headers: { ...auth, 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  assert.equal((await put({ targets: ['de'] })).status, 400);
+  assert.equal((await put({ apiKey: 'x' })).status, 400);
+  res = await put({ targets: ['en', 'ru'], routes: { 'fi-ru': ['mt'] } });
+  assert.equal(res.status, 200);
+  assert.deepEqual((await res.json()).targets, ['en', 'ru']);
+  assert.equal((await put({ routes: { 'fi-fi': ['mt'] } })).status, 400);
+
+  res = await fetch(`${base}/api/v1/translation/languages`, { headers: auth });
+  const languages = await res.json();
+  assert.ok(!languages.rolloutTargets.includes('es'));
+  const fiRu = languages.directions.find((d) => d.source === 'fi' && d.target === 'ru');
+  assert.deepEqual(fiRu, { source: 'fi', target: 'ru', configured: true, available: false });
+  assert.ok(!languages.directions.some((d) => d.source === d.target));
+});

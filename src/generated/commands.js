@@ -89,6 +89,28 @@ export const commands = [
     "auth": "bearer"
   },
   {
+    "operationId": "getTranslation",
+    "command": "get-translation",
+    "method": "GET",
+    "path": "/api/v1/translation",
+    "summary": "Caption translation state, per target and route (never caption text)",
+    "pathParams": [],
+    "hasBody": false,
+    "streams": false,
+    "auth": "bearer"
+  },
+  {
+    "operationId": "getTranslationLanguages",
+    "command": "get-translation-languages",
+    "method": "GET",
+    "path": "/api/v1/translation/languages",
+    "summary": "Language policy and which directions are available now",
+    "pathParams": [],
+    "hasBody": false,
+    "streams": false,
+    "auth": "bearer"
+  },
+  {
     "operationId": "listAudioDevices",
     "command": "list-audio-devices",
     "method": "GET",
@@ -170,7 +192,7 @@ export const commands = [
     "command": "stream-transcription-events",
     "method": "GET",
     "path": "/api/v1/transcription/events",
-    "summary": "Server-sent events; \"transcript\", \"capture\" and \"transcription\" events",
+    "summary": "Server-sent events; \"transcript\", \"translation\", \"capture\" and \"transcription\" events",
     "pathParams": [],
     "hasBody": false,
     "streams": true,
@@ -182,6 +204,17 @@ export const commands = [
     "method": "PUT",
     "path": "/api/v1/config",
     "summary": "Change configuration (partial; a secret sent back as \"***\" keeps its value)",
+    "pathParams": [],
+    "hasBody": true,
+    "streams": false,
+    "auth": "bearer"
+  },
+  {
+    "operationId": "updateTranslation",
+    "command": "update-translation",
+    "method": "PUT",
+    "path": "/api/v1/translation",
+    "summary": "Change translation mode, targets or route chains; reload the translation memory",
     "pathParams": [],
     "hasBody": true,
     "streams": false,
