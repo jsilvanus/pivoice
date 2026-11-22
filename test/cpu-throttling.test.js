@@ -17,7 +17,7 @@ function fakeVad(probabilities, opts = {}) {
       return { output: { data: [probabilities[Math.min(n++, probabilities.length - 1)]] }, stateN: { data: new Float32Array(256).fill(0.5) } };
     },
   };
-  const vad = new SileroVad({ runtime: { Tensor: FakeTensor }, session, ...opts });
+  const vad = new SileroVad({ runtime: { Tensor: FakeTensor }, session, floorDbfs: null, ...opts }); // these tests feed all-zero frames and exercise throttling, not the level gate
   return { vad, feedsSeen, runs: () => n };
 }
 

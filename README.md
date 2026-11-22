@@ -138,6 +138,8 @@ Stored in `$PIVOICE_DATA_DIR/config.json` (mode 0600). Change it with `PUT /api/
 | `PIVOICE_TELEMETRY_INTERVAL_MS` | `250` | UDP snapshot period while capturing (20-2000; PiGateway marks stale after 6000 ms) |
 | `PIVOICE_STATUS_HZ` | `5` | Max rate of per-frame Silero VAD status events (changes of speech state or probability bucket are always immediate) |
 | `PIVOICE_SPECTRAL_EVERY` | `4` | Run the spectral FFT on every Nth loud frame (1 = every frame); silence and sudden zero-crossing changes are still handled per frame |
+| `PIVOICE_VAD_FLOOR_DBFS` | `-60` | Silero VAD skips the model for frames quieter than this level while it is not speaking and no hangover is pending (probability reported as 0, model state reset to the stream-start state). `0` or `off` runs every frame. Keep it well below speech |
+| `PIVOICE_VAD_ON_DEMAND` | `1` | Run Silero only while something reads its result: an event (SSE) subscriber, `auditor.mode` `auto` with chunk upload, or PiGateway telemetry with an activity-triggered live auditor (`startWhen` not `capture_start`). Otherwise `speechDetection` reports `speaking: false, skipped: "idle"`. `0` always runs it |
 | `PIVOICE_RADIO_RTMP_URL` | unset | Initial radio target RTMP URL (e.g. `rtmp://...:1935/live/keskuskirkko`) |
 | `PIVOICE_RADIO_HLS_URL` | unset | Initial radio target public stream URL |
 | `PIVOICE_RADIO_BITRATE` | `96k` | Initial radio audio bitrate |

@@ -49,7 +49,8 @@ export class PiVoiceService {
   #pushAuditor = null;
   #liveFallbackActive = false;
   #liveRetryTimer = null;
-  #meter = { rmsDbfs: null, peakDbfs: null, measuredAt: 0 };
+  #meter = { rms: 0, rmsDbfs: null, peakDbfs: null, measuredAt: 0 };
+  #vadOnDemand;
   #spectral;
   #silero;
   #sileroInit = null;
@@ -61,7 +62,9 @@ export class PiVoiceService {
   constructor({
     store, spawn, fetchFn = globalThis.fetch, createSender, execFile, now = Date.now,
     minRestartMs, maxRestartMs, staleMs, telemetryHost, telemetryPort = 3101,
+    vadOnDemand = !['0', 'off', 'false', 'no'].includes(String(process.env.PIVOICE_VAD_ON_DEMAND ?? '1').trim().toLowerCase()),
   }) {
+    this.#vadOnDemand = Boolean(vadOnDemand);
     this.#store = store;
     this.#now = now;
     this.#startedAt = now();
@@ -140,7 +143,11 @@ export class PiVoiceService {
   subscribe(listener) {
     const handler = (event) => listener(event);
     this.#hub.on('event', handler);
-    return () => this.#hub.off('event', handler);
+    this.#syncSilero();
+    return () => {
+      this.#hub.off('event', handler);
+      this.#syncSilero();
+    };
   }
 
   /** Start according to the persisted capture policy (used at process startup). */
@@ -282,6 +289,7 @@ export class PiVoiceService {
     if (changed('voice')) this.#buildVoice(next);
     if (changed('radio') || changed('capture')) this.radio.configure({ targets: next.radio.targets, bitrate: next.radio.bitrate, sampleRate: next.capture.sampleRate, channels: next.capture.channels });
     if (changed('auditor')) this.#applyAuditor(next);
+    this.#syncSilero();
     if (changed('activity')) this.#preroll.configureSeconds(next.activity.prerollSeconds);
     if (changed('captions')) this.#buildCaptions(next);
   }
@@ -549,13 +557,34 @@ export class PiVoiceService {
     return mode === 'on' || (mode === 'auto' && this.#stream.online);
   }
 
+  /**
+   * Whether anything reads Silero's result. Conservative: false only when every known consumer is absent.
+   * Consumers: any event subscriber (SSE clients see 'speech-detection'/'activity'), auditor chunk gating
+   * (`auditor.mode` auto with the push transcriber), and PiGateway (telemetry classification starts
+   * activity sessions, which PiVoice only accepts with a live auditor, a non-off mode and a startWhen
+   * other than capture_start). The relay/YouTube 'auto' modes use the energy gate, not Silero.
+   */
+  speechDetectionNeeded() {
+    if (!this.#vadOnDemand) return true;
+    if (this.#hub.listenerCount('event') > 0) return true;
+    const auditor = this.#store.get().auditor;
+    if (auditor.mode === 'auto' && this.transcriber.configured) return true;
+    if (auditor.mode !== 'off' && auditor.startWhen !== 'capture_start' && this.#liveAuditor && (this.#telemetry || this.#liveAuditor.running)) return true;
+    return false;
+  }
+
+  #syncSilero() {
+    this.#silero.setSuspended(!this.speechDetectionNeeded());
+  }
+
   #onPcm(pcm, startMs) {
     this.#meter = measurePcm(pcm, this.#now());
     this.#preroll.push(pcm, startMs);
     const endMs = startMs + pcm.length / 32;
+    this.#syncSilero();
     this.#spectral.push(pcm, endMs);
     this.#silero.push(pcm, endMs);
-    this.voice.push(pcm, startMs);
+    this.voice.push(pcm, startMs, this.#meter.rms); // the meter already measured this buffer's RMS
     if (this.#liveAuditor?.running && this.#liveAuditor.inputMode === 'push') {
       this.#liveAuditor.pushPcm(pcm);
     }
@@ -598,7 +627,7 @@ export class PiVoiceService {
 
 function measurePcm(pcm, measuredAt) {
   const samples = Math.floor(pcm.length / 2);
-  if (!samples) return { rmsDbfs: null, peakDbfs: null, measuredAt };
+  if (!samples) return { rms: 0, rmsDbfs: null, peakDbfs: null, measuredAt };
   let sumSquares = 0;
   let peak = 0;
   for (let offset = 0; offset + 1 < pcm.length; offset += 2) {
@@ -609,5 +638,5 @@ function measurePcm(pcm, measuredAt) {
   }
   const rms = Math.sqrt(sumSquares / samples);
   const dbfs = (value) => value <= 0 ? -120 : 20 * Math.log10(value / 32768);
-  return { rmsDbfs: dbfs(rms), peakDbfs: dbfs(peak), measuredAt };
+  return { rms, rmsDbfs: dbfs(rms), peakDbfs: dbfs(peak), measuredAt };
 }

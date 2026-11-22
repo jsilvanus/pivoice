@@ -33,9 +33,10 @@ export class VoiceGate extends EventEmitter {
     return this.#lastVoiceMs;
   }
 
-  push(pcm, startMs) {
+  /** `level` is the buffer's RMS when the caller already measured it (saves a pass over the samples). */
+  push(pcm, startMs, level = null) {
     const endMs = startMs + pcm.length / BYTES_PER_MS;
-    if (rms(pcm) >= this.#thresholdRms) {
+    if ((level ?? rms(pcm)) >= this.#thresholdRms) {
       this.#lastVoiceMs = endMs;
       if (!this.#open) {
         this.#open = true;
