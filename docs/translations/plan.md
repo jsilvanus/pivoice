@@ -34,11 +34,12 @@ PiVoice already sees every final transcript, in both auditor modes:
 | Mode | Code | Event PiVoice emits |
 |---|---|---|
 | Upload (`/inference`) | `src/transcriber.js` | `{ seq, chunkSeq, startMs, endMs, text, language }`, `seq` is PiVoice's own counter |
-| Pull (`/v1/live` + SSE) | `src/auditor-live.js` | same shape, `seq` = the auditor's `sequence` of the live session |
+| Live pull (`/v1/live` + SSE, auditor reads RTSP/SRT) | `src/auditor-live.js` | same shape, `seq` = the auditor's `sequence` of the live session |
+| Live push (`auditor.liveMode: push`, PiVoice posts 16 kHz PCM to `/v1/live/{id}/audio`; added 2026-11) | `src/auditor-live.js` | same as live pull |
 
 Both feed `PiVoiceService.#onTranscript` (`src/service.js`), which publishes a `transcript` event on PiVoice's own SSE bus and pushes to the two caption outputs PiVoice has itself: `RelayCaptions` (`src/captions/relay.js`, `POST /api/v1/streams/{s}/captions` on web-radio-relay, segments carry `lang`) and `YouTubeCaptions` (`src/captions/youtube.js`, `lcyt` sender, one track).
 
-Transcripts are final. The auditor sends no interim or revised text (`pitube/CONTRACT.md` §2). `startMs`/`endMs` are epoch ms of the spoken audio, anchored at PiVoice.
+All three modes end in the same `transcript` event, so translation does not care which one runs. Transcripts are final. The auditor sends no interim or revised text (`pitube/CONTRACT.md` §2). `startMs`/`endMs` are epoch ms of the spoken audio, anchored at PiVoice.
 
 ### 2.2 The pigateway bus
 
@@ -152,10 +153,14 @@ Each source segment gets a key PiVoice and pigateway can both compute without ta
 sourceKey = `${session}:${sequence}`
 ```
 
-- Pull mode: `session` = auditor live session id, `sequence` = auditor `sequence` (the same pair pigateway de-duplicates on) [V for the pair, D for the key].
+- Live modes (pull and push): `session` = auditor live session id, `sequence` = auditor `sequence` (the same pair pigateway de-duplicates on) [V for the pair, D for the key].
 - Upload mode: `session` = `pivoice-<random per capture start>`, `sequence` = PiVoice `seq`.
 
 The job sends segments with ids `0..n-1` (local to the job); PiVoice maps them back. Nothing from the session goes into the job payload.
+
+### 5.1a Pi CPU budget
+
+PiVoice was tuned for idle CPU in November 2026 (status at 5 Hz, sparse FFT, slower telemetry; a level gate for Silero is in progress). The translation manager must not undo that: with `mode: off` it creates no timers and does no work per transcript; when on, the only timers are the batch window (armed only while a batch is open) and the 30 s availability poll. No per-audio-frame work: translation runs per transcript, a few times a minute. It never touches the VAD, meter or capture loop.
 
 ### 5.2 Flow per transcript
 
@@ -498,7 +503,7 @@ The phases above are PR-sized. Below they are cut into tasks small enough for a 
 | T3 | pivoice | Batcher | `src/translation/batcher.js` + test | §5.2 steps 4 and 6 | fake clock: flush at `windowMs`, at `maxSegments`, at `maxChars`; bounded queue drops oldest and counts; in-flight limit holds segments |
 | T4 | pivoice | Result validation | `src/translation/result.js` + test | §6.3 | missing id, duplicate id, unknown id, empty text, echo of another segment each rejected; 600-char text cut to 500 and counted |
 | T5 | pivoice | Deadlines and retry rules | `src/translation/deadline.js` + test | §5.3 | past-deadline dropped at each check point; retry allowed only for listed codes and only if deadline allows |
-| T6 | pivoice | Config schema | `src/config.js` (translation block only) + test | §8.1 | defaults as in §8.1; invalid target, invalid route name, chain naming unknown route all rejected; secrets not accepted in config |
+| T6 | pivoice | Config schema | `src/config.js` (translation block only) + test | §8.1 | zod 3 like the rest of the schema; `mergeConfig` patches work; defaults as in §8.1; invalid target, invalid route name, chain naming unknown route all rejected; secrets not accepted in config |
 | T7 | pivoice | Hosted route, Google adapter | `src/translation/routes/hosted.js` + test | §5.6 hosted | fake fetch: request body shape, header key not query key, order kept, 429 retry once, 403 marks unavailable, budget reached = unavailable, key absent from errors |
 | T8 | pivoice | llm route (ollama) | `src/translation/routes/llm.js` + test | §5.6 llm | fake fetch: prompt contains direction, context, glossary; JSON answer parsed; non-JSON or wrong ids rejected via T4; `/api/tags` availability; timeout aborts |
 | T9 | pivoice | mt route (fffleet client) | `src/translation/routes/mt.js` + test | §6.1, §6.4 | fffleet client with no URL and a fake `translate` executor (fffleet's documented test pattern): submit shape, `fallback:'none'`, queue-timeout cancel, error code mapping, capability poll |
