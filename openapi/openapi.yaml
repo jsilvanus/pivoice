@@ -875,6 +875,26 @@ components:
               minimum: 0
               maximum: 5
               description: Audio kept before speech, sent when auto targets start
+        translation:
+          type: object
+          description: Caption translation (docs/translations/plan.md section 8.1). Off by default. Keys come from the environment, never from here.
+          properties:
+            mode:
+              type: string
+              enum: [off, on, auto]
+            targets:
+              type: array
+              items:
+                type: string
+                enum: [fi, en, sv, ru, uk, es]
+            routes:
+              type: object
+              description: Route chain per direction ("default" or e.g. "fi-uk"); routes are mt, llm, hosted
+              additionalProperties:
+                type: array
+                items:
+                  type: string
+                  enum: [mt, llm, hosted]
     ConfigPatch:
       type: object
       description: Any part of the Config object; nested objects are merged, arrays replaced
@@ -894,6 +914,8 @@ components:
         auditor:
           type: object
         captions:
+          type: object
+        translation:
           type: object
     RadioTarget:
       type: object
