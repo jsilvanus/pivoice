@@ -5,7 +5,8 @@
  * encoder_model*.onnx and decoder_model_merged*.onnx). Models are never downloaded here:
  * remote loading is switched off, so a missing file fails instead of fetching.
  *
- * UNVERIFIED: not yet run against a real exported OPUS-MT model (plan phase 1 measures it).
+ * Verified 2026-11-23 with Xenova/opus-mt-fi-en and an exported Helsinki-NLP/opus-mt-sv-fi (README).
+ * Sentences are translated one at a time: a batched call adds stray punctuation from padding.
  */
 import path from 'node:path';
 

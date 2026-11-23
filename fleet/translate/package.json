@@ -12,7 +12,12 @@
   "exports": {
     ".": "./executor.js"
   },
-  "optionalDependencies": {
-    "@huggingface/transformers": "^3.7.0"
+  "packageManager": "pnpm@11.23.0",
+  "scripts": {
+    "test": "node --test",
+    "fetch-models": "node scripts/fetch-models.mjs"
+  },
+  "dependencies": {
+    "@huggingface/transformers": "^3.8.1"
   }
 }
