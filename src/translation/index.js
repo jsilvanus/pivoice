@@ -2,12 +2,13 @@ import { createFleet } from 'fffleet';
 import { routeChain } from './config.js';
 import { TranslationManager } from './manager.js';
 import { TranslationMemory } from './memory.js';
+import { GatewayTranslations } from './gateway-publisher.js';
 import { createRouter } from './router.js';
+import { createLlmRoute } from './routes/llm.js';
 import { createMtRoute } from './routes/mt.js';
 
 /**
- * Builds the translation stack from the `translation` config block (plan §5, §8.1). Only the mt
- * route exists so far (local mode first). Secrets come from the environment only:
+ * Builds the translation stack from the `translation` config block (plan §5, §8.1). The mt route exists when a fleet URL is set, llm when `llm.url` is set. Secrets come from the environment only:
  * FFFLEET_CLIENT_ID + FFFLEET_CLIENT_SECRET, or FFFLEET_TOKEN.
  *
  * Nothing here starts a timer or a connection: the manager polls only after `start()`.
@@ -34,6 +35,15 @@ export function createTranslation({ config, env = process.env, fetchFn = globalT
       queueTimeoutMs: cfg.queueTimeoutMs,
     });
   }
+  if (cfg.llm.url) {
+    routes.llm = createLlmRoute({
+      url: cfg.llm.url,
+      model: cfg.llm.model,
+      timeoutMs: cfg.llm.timeoutMs,
+      keepAlive: cfg.llm.keepAlive,
+      fetchFn,
+    });
+  }
   const router = createRouter({
     routes,
     chainFor: (source, target) => routeChain(config(), source, target),
@@ -41,5 +51,12 @@ export function createTranslation({ config, env = process.env, fetchFn = globalT
   });
   const memory = new TranslationMemory({ path: cfg.memoryPath });
   const manager = new TranslationManager({ config, router, memory, routes });
-  return { manager, memory, routes };
+  // pigateway bus publisher (plan §9.2). Key from the environment only; used when publish.gateway is on.
+  const gateway = new GatewayTranslations({
+    url: env.PIVOICE_GATEWAY_URL,
+    token: env.PIVOICE_GATEWAY_API_KEY,
+    fetchFn,
+    maxAgeMs: cfg.maxAgeMs,
+  });
+  return { manager, memory, routes, gateway };
 }

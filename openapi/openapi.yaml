@@ -1113,6 +1113,11 @@ components:
           type:
             - object
             - "null"
+        gateway:
+          type:
+            - object
+            - "null"
+          description: pigateway publisher status (configured, running, counts; never the key). Null while translation is off.
     TranslationUpdate:
       type: object
       additionalProperties: false

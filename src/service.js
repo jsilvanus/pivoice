@@ -366,6 +366,7 @@ export class PiVoiceService {
     this.#relay.stop();
     this.#youtube.stop();
     this.#translation?.manager.stop();
+    this.#translation?.gateway?.stop();
     this.stopCapture();
     this.#telemetry?.stop();
     clearTimeout(this.#auditorIdleTimer);
@@ -653,6 +654,7 @@ export class PiVoiceService {
   /** Rebuilds the translation stack after its config changed. Off = nothing built, no timers. */
   #buildTranslation(cfg) {
     this.#translation?.manager.stop();
+    this.#translation?.gateway?.stop();
     this.#translation?.manager.removeAllListeners();
     this.#translation = null;
     if (cfg.translation.mode === 'off') return;
@@ -682,11 +684,23 @@ export class PiVoiceService {
     if (!manager) return;
     if (this.#translationWanted()) manager.start();
     else manager.stop();
+    const gateway = this.#translation.gateway;
+    if (gateway) {
+      if (this.#translationWanted() && this.#store.get().translation.publish.gateway && gateway.configured) gateway.start();
+      else gateway.stop();
+    }
   }
 
   #onTranslation(event) {
     const publish = this.#store.get().translation.publish;
     if (publish.events) this.#publish('translation', event);
+    if (publish.gateway) {
+      try {
+        this.#translation?.gateway?.push(event);
+      } catch {
+        // Publishing to the gateway never disturbs captions.
+      }
+    }
     if (publish.relay && this.#store.get().captions.relay.mode !== 'off') {
       // The relay takes translations as ordinary segments with their own language (plan §9.1).
       this.#relay.push({ seq: event.sourceSeq, language: event.lang, text: event.text, startMs: event.startMs, endMs: event.endMs });
@@ -700,7 +714,7 @@ export class PiVoiceService {
     const base = { mode: cfg.translation.mode, targets: cfg.translation.targets, running: false, routes: {}, perTarget: {}, skipped: { unsupportedSource: 0, unavailable: 0 }, memory: null };
     if (!manager) return base;
     const s = manager.status({ source: baseLanguage(cfg.auditor.language) });
-    return { ...base, running: s.running, routes: s.routes, perTarget: s.targets, skipped: s.skipped, memory: s.memory };
+    return { ...base, running: s.running, routes: s.routes, perTarget: s.targets, skipped: s.skipped, memory: s.memory, gateway: this.#translation.gateway?.status() ?? null };
   }
 
   /** GET /api/v1/translation/languages: the policy table and what can run now. */
