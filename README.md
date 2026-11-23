@@ -146,6 +146,8 @@ Stored in `$PIVOICE_DATA_DIR/config.json` (mode 0600). Change it with `PUT /api/
 | `PIVOICE_CAPTION_RELAY_URL` | unset | Web radio relay base URL for captions |
 | `PIVOICE_CAPTION_RELAY_TOKEN` | unset | Web radio relay API token |
 | `PIVOICE_CAPTION_RELAY_STREAM` | unset | Web radio relay stream name (default stream if unset) |
+| `PIVOICE_GATEWAY_URL` | unset | PiGateway HTTP base URL; with `translation.publish.gateway: true`, translations are posted to `/api/v1/translations` |
+| `PIVOICE_GATEWAY_API_KEY` | unset | PiGateway API key for that post (never in config or status) |
 
 ## API
 
