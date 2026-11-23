@@ -293,7 +293,7 @@ Every input id exactly once, no unknown ids, text non-empty after trim, at most 
 
 ### 6.4 Latency [U]
 
-Per job: orchestrator placement + dispatch to the worker + inference + result back to the client. The fleet part has not been measured for tiny jobs; it is phase 1's first measurement. Target: p95 under 1.5 s from transcript to translation for a 1-segment job with a warm model. If the fleet round trip alone is above about 700 ms, the fallback design is one `kind: 'stream'` job per direction that reads NDJSON on stdin and writes NDJSON on stdout; whether fffleet's `stdin`/`stdout` piping reaches custom executors (it is documented for ffmpeg) is **[U]** and would be a small generic fffleet change if it does not.
+Per job: orchestrator placement + dispatch to the worker + inference + result back to the client. The fleet part has not been measured for tiny jobs; it is phase 1's first measurement (2026-11-23, cloud container: one-segment jobs p50 212 ms, p95 376 ms end to end; fleet overhead about 30 to 50 ms, so the batch design stays). Target: p95 under 1.5 s from transcript to translation for a 1-segment job with a warm model. If the fleet round trip alone is above about 700 ms, the fallback design is one `kind: 'stream'` job per direction that reads NDJSON on stdin and writes NDJSON on stdout; whether fffleet's `stdin`/`stdout` piping reaches custom executors (it is documented for ffmpeg) is **[U]** and would be a small generic fffleet change if it does not.
 
 ---
 
@@ -333,6 +333,8 @@ Candidate models: Helsinki-NLP OPUS-MT (Marian), CC-BY 4.0, per direction about 
 Memory: expected a few hundred MB per loaded int8 model **[U]**; with `TRANSLATE_MAX_LOADED=3` the container should fit in 2 GB. The 8 GB operator PC is already the limit, so phase 1 measures peak RSS beside a running auditor, ollama and detect worker before the cap is fixed. The GPU is not used: it is shared by STT and ollama, the same reason the detect worker runs on CPU.
 
 Models are fetched once by a setup script (`fleet/translate/scripts/fetch-models.mjs`: download, export or use a published ONNX conversion, quantise, write `models.json` with revision and licence), never during a service. Attribution for CC-BY models goes in the worker README and the status output.
+
+**Measured 2026-11-23 (cloud container, not the operator PC; T14, T19):** the engine works with published Transformers.js conversions (`Xenova/opus-mt-*`: fi-en, en-fi, en-sv, sv-en, en-ru, en-uk, en-es) and with checkpoints exported by `fleet/translate/scripts/export_marian.py` (the other eight directions exist only as `Helsinki-NLP/opus-mt-*` checkpoints). int8 is about 107 MB on disk per direction, about 300 MB RSS per loaded model, 0.6 to 1 s load, 150 to 400 ms per sentence with 2 threads. Licences so far Apache-2.0. Details in `fleet/translate/README.md`.
 
 ### 7.5 Quality checks
 

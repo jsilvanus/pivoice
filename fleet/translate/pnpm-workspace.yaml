@@ -1,0 +1,6 @@
+# Own workspace root, so the Pi install of PiVoice never pulls the model runtime.
+# onnxruntime-node ships its CPU binaries in the package; no install scripts are needed.
+allowBuilds:
+  onnxruntime-node: false
+  protobufjs: false
+  sharp: false
