@@ -1,9 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { CaptureSupervisor, ffmpegCaptureArgs, getAudioMixer, listAudioDevices, parseAmixerScontents, parseArecordList, parseCardFromDevice, setAudioMixer } from '../src/capture.js';
+import { CaptureSupervisor, ffmpegCaptureArgs, getAudioMixer, listAudioDevices, parseAmixerScontents, parseArecordList, parseCardFromDevice, resolvePlaybackDevice, setAudioMixer } from '../src/capture.js';
 import { fakeSpawn, waitFor } from './helpers.js';
 
-const config = { mode: 'alsa', device: 'hw:1,0', channels: 1, sampleRate: 48000, chunkSeconds: 5, autostart: false };
+const config = { mode: 'alsa', device: 'hw:1,0', playbackDevice: 'none', channels: 1, sampleRate: 48000, chunkSeconds: 5, autostart: false };
 
 test('ffmpeg reads ALSA once and fans out analysis PCM plus source-format PCM', () => {
   const args = ffmpegCaptureArgs(config);
@@ -86,6 +86,31 @@ test('listAudioDevices reports a missing arecord', async () => {
   assert.deepEqual(out, { devices: [], error: 'arecord is not installed (alsa-utils)' });
 });
 
+test('resolvePlaybackDevice defaults to same card plughw when unspecified', () => {
+  assert.equal(resolvePlaybackDevice({ mode: 'alsa', device: 'hw:1,0' }), 'plughw:1,0');
+  assert.equal(resolvePlaybackDevice({ mode: 'alsa', device: 'plughw:2,0' }), 'plughw:2,0');
+  assert.equal(resolvePlaybackDevice({ mode: 'alsa', device: 'hw:CARD=Device,DEV=0' }), 'plughw:CARD=Device,DEV=0');
+  assert.equal(resolvePlaybackDevice({ mode: 'alsa', device: 'default' }), 'default');
+  assert.equal(resolvePlaybackDevice({ mode: 'simulated', device: 'hw:1,0' }), null);
+  // Explicit disable options
+  assert.equal(resolvePlaybackDevice({ mode: 'alsa', device: 'hw:1,0', playbackDevice: 'none' }), null);
+  assert.equal(resolvePlaybackDevice({ mode: 'alsa', device: 'hw:1,0', playbackDevice: 'off' }), null);
+  assert.equal(resolvePlaybackDevice({ mode: 'alsa', device: 'hw:1,0', playbackDevice: false }), null);
+  assert.equal(resolvePlaybackDevice({ mode: 'alsa', device: 'hw:1,0', playbackDevice: '' }), null);
+  // Custom device override
+  assert.equal(resolvePlaybackDevice({ mode: 'alsa', device: 'hw:1,0', playbackDevice: 'plughw:3,0' }), 'plughw:3,0');
+});
+
+test('ffmpegCaptureArgs includes ALSA playback branch by default copying from capture card', () => {
+  const args = ffmpegCaptureArgs({ mode: 'alsa', device: 'hw:1,0', channels: 1, sampleRate: 48000 });
+  assert.ok(args.includes('plughw:1,0'));
+  const alsaIndex = args.lastIndexOf('-f');
+  assert.equal(args[alsaIndex + 1], 'alsa');
+  assert.equal(args[alsaIndex + 2], 'plughw:1,0');
+  const panIdx = args.lastIndexOf('-af');
+  assert.equal(args[panIdx + 1], 'pan=stereo|c0=c0|c1=0*c0');
+});
+
 test('ffmpegCaptureArgs includes ALSA playback branch when playbackDevice is configured', () => {
   const args = ffmpegCaptureArgs({ mode: 'alsa', device: 'hw:1,0', playbackDevice: 'plughw:1,0', channels: 1, sampleRate: 48000 });
   assert.ok(args.includes('plughw:1,0'));
@@ -98,10 +123,10 @@ test('ffmpegCaptureArgs includes ALSA playback branch when playbackDevice is con
 });
 
 test('ffmpegCaptureArgs maps left-channel only for both 1-channel and 2-channel capture', () => {
-  const mono = ffmpegCaptureArgs({ mode: 'alsa', device: 'hw:1,0', channels: 1, sampleRate: 48000 });
+  const mono = ffmpegCaptureArgs({ mode: 'alsa', device: 'hw:1,0', playbackDevice: 'none', channels: 1, sampleRate: 48000 });
   assert.ok(mono.includes('pan=mono|c0=c0'));
 
-  const stereo = ffmpegCaptureArgs({ mode: 'alsa', device: 'hw:1,0', channels: 2, sampleRate: 48000 });
+  const stereo = ffmpegCaptureArgs({ mode: 'alsa', device: 'hw:1,0', playbackDevice: 'none', channels: 2, sampleRate: 48000 });
   assert.ok(stereo.includes('pan=mono|c0=c0'));
   assert.ok(stereo.includes('pan=stereo|c0=c0|c1=0*c0'));
 });

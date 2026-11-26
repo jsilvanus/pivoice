@@ -6,7 +6,28 @@ import { rms } from './vad.js';
 /** A restart counts as healthy (and resets the backoff) after this long. */
 const STABLE_AFTER_MS = 30_000;
 
-export function ffmpegCaptureArgs({ device, playbackDevice, channels, sampleRate }) {
+export function resolvePlaybackDevice({ mode, device, playbackDevice }) {
+  if (mode === 'simulated') return null;
+  // If explicitly disabled (e.g. false, 'none', 'off', or empty string), disable playback
+  if (playbackDevice === false || playbackDevice === 'none' || playbackDevice === 'off' || playbackDevice === '') return null;
+  // If explicitly configured to a device string, use it
+  if (playbackDevice) return playbackDevice;
+  // Default to copying sound out to the same card:
+  // Use plughw for ALSA to handle sample format/rate compatibility cleanly
+  if (!device || device === 'default') return 'default';
+  const cardMatch = device.match(/CARD=([^,]+)/i);
+  if (cardMatch) return `plughw:CARD=${cardMatch[1]},DEV=0`;
+  const hwMatch = device.match(/^(?:plug)?hw:([^,]+)/);
+  if (hwMatch) {
+    const parts = device.split(',');
+    const dev = parts[1] !== undefined ? parts[1] : '0';
+    return `plughw:${hwMatch[1]},${dev}`;
+  }
+  return device;
+}
+
+export function ffmpegCaptureArgs({ mode = 'alsa', device, playbackDevice, channels, sampleRate }) {
+  const resolvedPlayback = resolvePlaybackDevice({ mode, device, playbackDevice });
   const args = [
     '-hide_banner', '-loglevel', 'warning', '-nostdin',
     // Timestamp ALSA packets against the host wall clock at the capture input.
@@ -18,10 +39,10 @@ export function ffmpegCaptureArgs({ device, playbackDevice, channels, sampleRate
     // Source-quality branch: preserve the configured capture rate and channel count (left channel only).
     '-map', '0:a:0', '-af', channels === 1 ? 'pan=mono|c0=c0' : 'pan=stereo|c0=c0|c1=0*c0', '-ar', String(sampleRate), '-f', 's16le', 'pipe:3',
   ];
-  if (playbackDevice) {
+  if (resolvedPlayback) {
     args.push(
       // Playback branch: push captured audio back to the ALSA playback device (e.g. Hama headphone output, left only).
-      '-map', '0:a:0', '-af', 'pan=stereo|c0=c0|c1=0*c0', '-ar', String(sampleRate), '-f', 'alsa', playbackDevice,
+      '-map', '0:a:0', '-af', 'pan=stereo|c0=c0|c1=0*c0', '-ar', String(sampleRate), '-f', 'alsa', resolvedPlayback,
     );
   }
   return args;
@@ -94,7 +115,7 @@ export class CaptureSupervisor extends EventEmitter {
     return {
       mode: this.#config.mode,
       device: this.#config.mode === 'alsa' ? this.#config.device : 'simulated',
-      playbackDevice: this.#config.mode === 'alsa' ? (this.#config.playbackDevice ?? null) : null,
+      playbackDevice: resolvePlaybackDevice(this.#config),
       running: this.#active,
       state: this.#state,
       restarts: this.#restarts,
